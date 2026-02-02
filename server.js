@@ -67,6 +67,21 @@ function scheduleAutoNextHand(room, delayMs = 5000) {
   }, delayMs);
 }
 
+function scheduleResumeAfterTrick(room, delayMs = 5000) {
+  if (!room?.game) return;
+  if (room.game.phase !== 'trick_pause') return;
+  if (room.trickPauseTimer) return;
+
+  room.trickPauseTimer = setTimeout(() => {
+    room.trickPauseTimer = null;
+    if (!room.game) return;
+    if (room.game.phase !== 'trick_pause') return;
+    room.game.resumeAfterTrick();
+    sendStateToAll(room);
+    maybeBotAct(room);
+  }, delayMs);
+}
+
 function getPlayer(room, pid) {
   return room.players.find(p => p.id === pid);
 }
@@ -306,8 +321,11 @@ io.on('connection', socket => {
       const rid = socketToRoom.get(socket.id);
       const room = rooms.get(rid);
       if (!room?.game) throw new Error('No active game');
-      room.game.playCard(socket.id, String(card));
+      const res = room.game.playCard(socket.id, String(card));
       sendStateToAll(room);
+      if (res?.trickEnded && room.game.phase === 'trick_pause') {
+        scheduleResumeAfterTrick(room);
+      }
       scheduleAutoNextHand(room);
       maybeBotAct(room);
     } catch (e) {

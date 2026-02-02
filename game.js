@@ -135,6 +135,7 @@ class WhistGame {
     this.tricksWon = {}; // pid => number
     this.currentTrick = []; // [{pid, card}]
     this.leadSuit = null;
+    this.pendingPlayTurnIndex = null;
 
     for (const pid of this.playerIds) {
       this.bids[pid] = null;
@@ -279,9 +280,9 @@ class WhistGame {
       this.phase = isLast ? 'game_end' : 'hand_end';
       // Keep the last trick visible during hand_end/game_end.
     } else {
-      this.currentTrick = [];
-      this.leadSuit = null;
-      this.playTurnIndex = this.playerIds.indexOf(winner);
+      // Pause between tricks to keep cards visible on the table.
+      this.phase = 'trick_pause';
+      this.pendingPlayTurnIndex = this.playerIds.indexOf(winner);
     }
 
     return { state: this.getPublicState(), trickEnded: true, trickWinner: winner };
@@ -331,6 +332,16 @@ class WhistGame {
     this.handIndex += 1;
     this.dealerIndex = (this.dealerIndex + 1) % this.numPlayers;
     return this.startHand();
+  }
+
+  resumeAfterTrick() {
+    if (this.phase !== 'trick_pause') throw new Error('Cannot resume trick now');
+    this.currentTrick = [];
+    this.leadSuit = null;
+    this.playTurnIndex = this.pendingPlayTurnIndex ?? this.playTurnIndex;
+    this.pendingPlayTurnIndex = null;
+    this.phase = 'playing';
+    return this.getPublicState();
   }
 
   getLeaderboard() {

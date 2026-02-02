@@ -39,6 +39,9 @@ const bidArea = document.getElementById('bidArea');
 const bidButtons = document.getElementById('bidButtons');
 const btnBid = document.getElementById('btnBid');
 const bidHint = document.getElementById('bidHint');
+const trumpArea = document.getElementById('trumpArea');
+const trumpButtons = document.getElementById('trumpButtons');
+const trumpHint = document.getElementById('trumpHint');
 
 const handEndArea = document.getElementById('handEndArea');
 const handSummary = document.getElementById('handSummary');
@@ -363,11 +366,26 @@ function renderBidding() {
   bidButtons.innerHTML = '';
   selectedBidValue = null;
   btnBid.disabled = true;
+  let forbidden = null;
+  if (youId === state.dealerId) {
+    let sumOthers = 0;
+    for (const pid of state.playerIds) {
+      if (pid === youId) continue;
+      const b = state.bids[pid];
+      if (typeof b === 'number') sumOthers += b;
+    }
+    const f = handSize - sumOthers;
+    if (f >= 0 && f <= handSize) forbidden = f;
+  }
   for (let i = 0; i <= handSize; i++) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'primary bidBtn';
     b.textContent = String(i);
+    if (forbidden !== null && i === forbidden) {
+      b.disabled = true;
+      b.classList.add('disabled');
+    }
     b.onclick = () => {
       selectedBidValue = String(i);
       Array.from(bidButtons.children).forEach(x => x.classList.remove('selected'));
@@ -380,14 +398,9 @@ function renderBidding() {
   // dealer forbidden hint
   bidHint.textContent = '';
   if (youId === state.dealerId) {
-    let sumOthers = 0;
-    for (const pid of state.playerIds) {
-      if (pid === youId) continue;
-      const b = state.bids[pid];
-      if (typeof b === 'number') sumOthers += b;
+    if (forbidden !== null) {
+      bidHint.textContent = `Ești dealer — nu ai voie să anunți ${forbidden}.`;
     }
-    const forbidden = handSize - sumOthers;
-    bidHint.textContent = `Ești dealer — nu ai voie să anunți ${forbidden}.`;
   }
 }
 
@@ -433,9 +446,10 @@ function renderGameHeader() {
   gameRoomTitle.textContent = room.name;
   phasePill.textContent = state.phase;
   handPill.textContent = `${state.handIndex}/${state.totalHands} • ${state.cardsPerPlayer} cărți`;
-  trumpPill.innerHTML = `<span class="trumpLabel">ATU</span><span class="trumpSuit ${isRedSuit(state.trumpSuit) ? 'red' : 'black'}">${suitName(state.trumpSuit)}</span>`;
+  const trumpLabel = state.trumpSuit ? suitName(state.trumpSuit) : '—';
+  trumpPill.innerHTML = `<span class="trumpLabel">ATU</span><span class="trumpSuit ${isRedSuit(state.trumpSuit) ? 'red' : 'black'}">${trumpLabel}</span>`;
 
-  const turnName = state.phase === 'bidding'
+  const turnName = (state.phase === 'bidding' || state.phase === 'choose_trump')
     ? (room.players.find(p => p.id === state.currentBidderId)?.name || '—')
     : (room.players.find(p => p.id === state.currentPlayerId)?.name || '—');
   turnPill.textContent = turnName;
@@ -502,9 +516,33 @@ function renderSidePanels() {
   }
 }
 
+function renderTrumpChoice() {
+  if (!state) return;
+  const isMyChoice = state.phase === 'choose_trump' && state.currentBidderId === youId;
+  trumpArea.classList.toggle('hidden', !isMyChoice);
+  if (!isMyChoice) return;
+
+  trumpButtons.innerHTML = '';
+  trumpHint.textContent = 'Alege atu-ul pentru această mână.';
+  const suits = ['S', 'H', 'D', 'C'];
+  for (const s of suits) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `primary trumpBtn ${isRedSuit(s) ? 'red' : 'black'}`;
+    b.textContent = suitName(s);
+    b.onclick = () => {
+      trumpHint.textContent = 'Se trimite...';
+      trumpButtons.querySelectorAll('button').forEach(x => x.disabled = true);
+      socket.emit('game:chooseTrump', { suit: s });
+    };
+    trumpButtons.appendChild(b);
+  }
+}
+
 function renderGame() {
   renderGameHeader();
   renderTrick();
+  renderTrumpChoice();
   renderBidding();
   renderHandEnd();
   renderGameEnd();

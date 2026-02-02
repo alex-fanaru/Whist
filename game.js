@@ -128,7 +128,7 @@ class WhistGame {
   }
 
   _resetForNextHand() {
-    this.phase = 'waiting'; // waiting|bidding|playing|hand_end|game_end
+    this.phase = 'waiting'; // waiting|choose_trump|bidding|playing|hand_end|game_end
     this.trumpSuit = null;
     this.hands = {}; // pid => Card[]
     this.bids = {}; // pid => number|null
@@ -150,7 +150,10 @@ class WhistGame {
 
     const deck = shuffle(this._createBaseDeck().slice());
     // pick trump as the suit of the first card in the shuffled deck (simple & deterministic)
-    this.trumpSuit = deck[0].suit;
+    // except for 8-card hands where the first bidder chooses the trump.
+    if (handSize !== 8) {
+      this.trumpSuit = deck[0].suit;
+    }
 
     // Deal `handSize` cards each, starting from left of dealer
     const startIndex = (this.dealerIndex + 1) % this.numPlayers;
@@ -166,8 +169,8 @@ class WhistGame {
       this.hands[pid].sort((a, b) => (a.suit === b.suit ? a.rank - b.rank : a.suit.localeCompare(b.suit)));
     }
 
-    this.phase = 'bidding';
     this.bidTurnIndex = startIndex; // bidding starts left of dealer
+    this.phase = (handSize === 8) ? 'choose_trump' : 'bidding';
     this.playTurnIndex = null;
     return this.getPublicState();
   }
@@ -210,6 +213,15 @@ class WhistGame {
       this.currentTrick = [];
       this.leadSuit = null;
     }
+    return this.getPublicState();
+  }
+
+  chooseTrump(pid, suit) {
+    if (this.phase !== 'choose_trump') throw new Error('Not in choose trump phase');
+    if (pid !== this.getCurrentBidder()) throw new Error('Not your turn to choose trump');
+    if (!SUITS.includes(suit)) throw new Error('Invalid trump suit');
+    this.trumpSuit = suit;
+    this.phase = 'bidding';
     return this.getPublicState();
   }
 
@@ -362,7 +374,7 @@ class WhistGame {
       bids: { ...this.bids },
       tricksWon: { ...this.tricksWon },
       currentPlayerId: this.getCurrentPlayer(),
-      currentBidderId: this.phase === 'bidding' ? this.getCurrentBidder() : null,
+      currentBidderId: (this.phase === 'bidding' || this.phase === 'choose_trump') ? this.getCurrentBidder() : null,
       currentTrick: this.currentTrick.map(t => ({ pid: t.pid, card: cardToString(t.card) })),
       totalScores: { ...this.totalScores },
       streaks: { ...this.streaks },

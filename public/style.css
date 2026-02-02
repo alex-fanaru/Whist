@@ -157,9 +157,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .seat.me{border-color:rgba(94,234,212,.35);background:rgba(94,234,212,.08)}
 .seat.me{transform-origin: center bottom;}
+.seat.me{width:300px;max-width:52%}
 .seat.me:hover{
   --seat-ty: -20px;
-  --seat-scale: 1.5;
+  --seat-scale: 1.15;
   z-index: 3;
   box-shadow: 0 12px 30px rgba(0,0,0,.35);
   transition-delay: 1.5s;
@@ -200,10 +201,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .seat:not(.me) .handRow{gap:4px}
 .seat:not(.me) .cardBtn{
-  min-width:30px;
+  min-width:22px;
   height:42px;
-  flex:0 0 calc(25% - 3px);
-  max-width:calc(25% - 3px);
+  flex:0 0 calc(18% - 3px);
+  max-width:calc(18% - 3px);
 }
 
 /* Seat positions (up to 6) */
@@ -293,6 +294,21 @@ button:disabled{opacity:.5;cursor:not-allowed}
   flex-wrap:wrap;
   gap:6px;
 }
+.trumpArea{margin-bottom:8px}
+.trumpButtons{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.trumpBtn{
+  width:44px;
+  height:44px;
+  padding:0;
+  border-radius:10px;
+  font-weight:900;
+}
+.trumpBtn.red{color:var(--danger)}
+.trumpBtn.black{color:var(--text)}
 .bidBtn{
   width:44px;
   height:44px;

@@ -94,7 +94,17 @@ function buildHandsViewFor(room, viewerId) {
   const handsByPlayer = {};
   for (const pid of room.game.playerIds) {
     const real = room.game.hands[pid].map(cardToString);
-    handsByPlayer[pid] = (pid === viewerId) ? real : real.map(() => 'HIDDEN');
+    if (pid === viewerId) {
+      if (room.game.phase === 'choose_trump'
+        && room.game.currentHandSize === 8
+        && pid === room.game.getCurrentBidder()) {
+        handsByPlayer[pid] = real.map((c, idx) => (idx < 5 ? c : 'HIDDEN'));
+      } else {
+        handsByPlayer[pid] = real;
+      }
+    } else {
+      handsByPlayer[pid] = real.map(() => 'HIDDEN');
+    }
   }
   return handsByPlayer;
 }
@@ -180,6 +190,27 @@ function maybeBotAct(room) {
           // ignore
         }
       }, 450);
+    }
+  } else if (game.phase === 'choose_trump') {
+    const pid = game.getCurrentBidder();
+    const p = getPlayer(room, pid);
+    if (p && p.isBot) {
+      setTimeout(() => {
+        try {
+          const hand = game.hands[pid];
+          const counts = { S: 0, H: 0, D: 0, C: 0 };
+          for (const c of hand) counts[c.suit] = (counts[c.suit] || 0) + 1;
+          let best = 'S';
+          for (const s of ['H', 'D', 'C']) {
+            if (counts[s] > counts[best]) best = s;
+          }
+          game.chooseTrump(pid, best);
+          sendStateToAll(room);
+          maybeBotAct(room);
+        } catch (e) {
+          // ignore
+        }
+      }, 350);
     }
   }
 }
@@ -333,6 +364,22 @@ io.on('connection', socket => {
       const room = rooms.get(rid);
       sendStateToSocket(room, socket.id);
       socket.emit('error:msg', { message: e.message || 'Play failed' });
+    }
+  });
+
+  socket.on('game:chooseTrump', ({ suit }) => {
+    try {
+      const rid = socketToRoom.get(socket.id);
+      const room = rooms.get(rid);
+      if (!room?.game) throw new Error('No active game');
+      room.game.chooseTrump(socket.id, String(suit));
+      sendStateToAll(room);
+      maybeBotAct(room);
+    } catch (e) {
+      const rid = socketToRoom.get(socket.id);
+      const room = rooms.get(rid);
+      sendStateToSocket(room, socket.id);
+      socket.emit('error:msg', { message: e.message || 'Choose trump failed' });
     }
   });
 

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Whist Românesc (Online)</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">🂡 Whist</div>
+      <div class="pill" id="connStatus">connecting…</div>
+    </header>
+
+    <main class="container">
+      <section id="viewLobby" class="view">
+        <div class="grid2">
+          <div class="card">
+            <h2>Creează room</h2>
+            <label>Numele tău</label>
+            <input id="createName" placeholder="ex: Andrei" maxlength="24" />
+            <label>Numele room-ului</label>
+            <input id="createRoom" placeholder="ex: Whist de seară" maxlength="40" />
+            <button id="btnCreate" class="primary">Creează</button>
+            <p class="muted">3–6 jucători. Hostul poate adăuga boți. Cartile sunt vizibile (ca la o masă).</p>
+          </div>
+
+          <div class="card">
+            <h2>Rooms disponibile</h2>
+            <div class="row">
+              <input id="joinName" placeholder="Numele tău" maxlength="24" />
+              <button id="btnRefresh">Refresh</button>
+            </div>
+            <div id="roomsList" class="rooms"></div>
+            <p class="muted">Dacă un joc a început, nu mai poți intra în room.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="viewRoom" class="view hidden">
+        <div class="card">
+          <div class="roomHeader">
+            <div>
+              <h2 id="roomTitle">Room</h2>
+              <div class="muted" id="roomMeta"></div>
+            </div>
+            <div class="row">
+              <button id="btnLeave">Ieși</button>
+            </div>
+          </div>
+
+          <h3>Jucători</h3>
+          <div id="playersList" class="players"></div>
+
+          <div class="row gap">
+            <button id="btnAddBot">+ Adaugă bot</button>
+            <div class="spacer"></div>
+            <button id="btnStart" class="primary">Start game</button>
+          </div>
+
+          <div class="notice" id="roomNotice"></div>
+          <div class="muted small">
+            Format: X mâini cu 1 carte, apoi 2..7, apoi X mâini cu 8, apoi 7..2, apoi X mâini cu 1 (unde X = nr. jucători).
+          </div>
+        </div>
+      </section>
+
+      <section id="viewGame" class="view hidden">
+        <div class="card">
+          <div class="row space">
+            <div>
+              <h2 id="gameRoomTitle">Game</h2>
+              <div class="muted" id="gameInfo"></div>
+            </div>
+            <button id="btnLeaveFromGame">Ieși</button>
+          </div>
+
+          
+          <div class="gameShell">
+            <aside class="sidePanel left">
+              <div class="sideBox">
+                <div class="sideTitle">📋 Joc</div>
+                <div class="sideRow"><span class="lbl">Fază</span><span class="pill" id="phasePill">phase</span></div>
+                <div class="sideRow"><span class="lbl">Joc</span><span class="pill" id="handPill">hand</span></div>
+                <div class="sideRow"><span class="lbl">Atu</span><span class="pill trumpBig" id="trumpPill">atu</span></div>
+                <div class="sideRow"><span class="lbl">Rând</span><span class="pill" id="turnPill">rând</span></div>
+              </div>
+
+              <div class="sideBox">
+                <div class="sideTitle">🎯 Bids</div>
+                <div class="muted" id="bidHintLeft"></div>
+                <div id="bidsList" class="list"></div>
+              </div>
+            </aside>
+
+            <main class="centerPanel">
+              <div class="tableWrap">
+                <div id="table" class="table felt">
+                  <div class="tableCenter">
+                    <div class="centerTitle">Trick</div>
+                    <div id="trickArea" class="trick"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="actionRow">
+                <div id="bidArea" class="bidArea hidden">
+                  <div class="row gap">
+                    <label class="inline">Bid:</label>
+                    <div id="bidButtons" class="bidButtons"></div>
+                    <button id="btnBid" class="primary">Trimite</button>
+                    <span class="muted" id="bidHint"></span>
+                  </div>
+                </div>
+
+                <div id="handEndArea" class="handEnd hidden">
+                  <div class="row gap">
+                    <div>
+                      <div class="muted" id="handSummary"></div>
+                    </div>
+                    <div class="spacer"></div>
+                    <button id="btnNextHand" class="primary">Următorul hand</button>
+                  </div>
+                </div>
+
+                <div id="gameEndArea" class="handEnd hidden">
+                  <div class="row gap">
+                    <div>
+                      <div class="muted">Game over. Leaderboard:</div>
+                      <div id="finalLeaderboard" class="list"></div>
+                    </div>
+                    <div class="spacer"></div>
+                    <button id="btnBackToLobby" class="primary">Înapoi la lobby</button>
+                  </div>
+                </div>
+              </div>
+            </main>
+
+            <aside class="sidePanel right">
+              <div class="sideBox">
+                <div class="sideTitle">🏆 Scoreboard</div>
+                <div id="scoreList" class="list"></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="notice small">Click pe o carte din mâna ta ca s-o joci (doar când e rândul tău). Cartile sunt vizibile pentru toți.</div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+  </body>
+</html>

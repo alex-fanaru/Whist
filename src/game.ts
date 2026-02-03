@@ -28,10 +28,46 @@
 // - exact bid => +10 + tricks won
 // - otherwise => -abs(bid - tricks)
 
-const SUITS = ['S', 'H', 'D', 'C']; // Spades, Hearts, Diamonds, Clubs
-const RANKS_ASC = [2,3,4,5,6,7,8,9,10,11,12,13,14]; // 11=J,12=Q,13=K,14=A
+type Suit = 'S' | 'H' | 'D' | 'C';
+type Phase = 'waiting' | 'choose_trump' | 'bidding' | 'playing' | 'hand_end' | 'game_end' | 'trick_pause';
 
-function shuffle(arr) {
+type Card = {
+  suit: Suit;
+  rank: number;
+};
+
+type TrickEntry = {
+  pid: string;
+  card: Card;
+};
+
+type Streak = {
+  type: '+' | '-' | null;
+  count: number;
+};
+
+type PublicState = {
+  phase: Phase;
+  playerIds: string[];
+  dealerId: string;
+  handIndex: number;
+  totalHands: number;
+  cardsPerPlayer: number;
+  trumpSuit: Suit | null;
+  bids: Record<string, number | null>;
+  tricksWon: Record<string, number>;
+  currentPlayerId: string | null;
+  currentBidderId: string | null;
+  currentTrick: { pid: string; card: string }[];
+  totalScores: Record<string, number>;
+  streaks: Record<string, Streak>;
+  leaderboard: { pid: string; score: number }[];
+};
+
+const SUITS: Suit[] = ['S', 'H', 'D', 'C']; // Spades, Hearts, Diamonds, Clubs
+const RANKS_ASC = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]; // 11=J,12=Q,13=K,14=A
+
+function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -39,20 +75,22 @@ function shuffle(arr) {
   return arr;
 }
 
-function cardToString(c) {
+function cardToString(c: Card): string {
   const r = c.rank;
   const rs = r === 14 ? 'A' : r === 13 ? 'K' : r === 12 ? 'Q' : r === 11 ? 'J' : String(r);
   return `${rs}${c.suit}`;
 }
 
-function stringToCard(s) {
-  const suit = s.slice(-1);
+function stringToCard(s: string): Card {
+  const suit = s.slice(-1) as Suit;
+  if (!SUITS.includes(suit)) throw new Error('Invalid suit');
   const r = s.slice(0, -1);
   const rank = r === 'A' ? 14 : r === 'K' ? 13 : r === 'Q' ? 12 : r === 'J' ? 11 : parseInt(r, 10);
+  if (!Number.isInteger(rank)) throw new Error('Invalid rank');
   return { suit, rank };
 }
 
-function compareCards(a, b, leadSuit, trumpSuit) {
+function compareCards(a: Card, b: Card, leadSuit: Suit | null, trumpSuit: Suit | null): number {
   // returns 1 if a>b, -1 if a<b
   const aTrump = a.suit === trumpSuit;
   const bTrump = b.suit === trumpSuit;
@@ -68,9 +106,9 @@ function compareCards(a, b, leadSuit, trumpSuit) {
   return a.rank === b.rank ? 0 : (a.rank > b.rank ? 1 : -1);
 }
 
-function buildSchedule(numPlayers) {
+function buildSchedule(numPlayers: number): number[] {
   const X = numPlayers;
-  const sched = [];
+  const sched: number[] = [];
   for (let i = 0; i < X; i++) sched.push(1);
   for (let k = 2; k <= 7; k++) sched.push(k);
   for (let i = 0; i < X; i++) sched.push(8);
@@ -80,7 +118,24 @@ function buildSchedule(numPlayers) {
 }
 
 class WhistGame {
-  constructor({ playerIds, dealerIndex = 0 }) {
+  playerIds: string[];
+  dealerIndex: number;
+  schedule: number[];
+  handIndex: number;
+  totalScores: Record<string, number>;
+  streaks: Record<string, Streak>;
+  phase: Phase;
+  trumpSuit: Suit | null;
+  hands: Record<string, Card[]>;
+  bids: Record<string, number | null>;
+  tricksWon: Record<string, number>;
+  currentTrick: TrickEntry[];
+  leadSuit: Suit | null;
+  pendingPlayTurnIndex: number | null;
+  bidTurnIndex: number;
+  playTurnIndex: number | null;
+
+  constructor({ playerIds, dealerIndex = 0 }: { playerIds: string[]; dealerIndex?: number }) {
     this.playerIds = [...playerIds];
     this.dealerIndex = dealerIndex;
 
@@ -94,28 +149,39 @@ class WhistGame {
       this.streaks[pid] = { type: null, count: 0 };
     }
 
+    this.phase = 'waiting';
+    this.trumpSuit = null;
+    this.hands = {};
+    this.bids = {};
+    this.tricksWon = {};
+    this.currentTrick = [];
+    this.leadSuit = null;
+    this.pendingPlayTurnIndex = null;
+    this.bidTurnIndex = 0;
+    this.playTurnIndex = null;
+
     this._resetForNextHand();
   }
 
-  get numPlayers() {
+  get numPlayers(): number {
     return this.playerIds.length;
   }
 
-  get currentHandSize() {
+  get currentHandSize(): number {
     return this.schedule[this.handIndex] || 1;
   }
 
-  _minRankForPlayers(n) {
+  private _minRankForPlayers(n: number): number {
     // Base deck is for 8 cards/player => need 8*n cards.
     // Cards per suit = 2*n. Keep top (2*n) ranks: min = 15 - 2*n.
     return 15 - 2 * n;
   }
 
-  _createBaseDeck() {
+  private _createBaseDeck(): Card[] {
     const n = this.numPlayers;
     const needed = 8 * n;
     const minRank = this._minRankForPlayers(n);
-    const deck = [];
+    const deck: Card[] = [];
     for (const s of SUITS) {
       for (const r of RANKS_ASC) {
         if (r >= minRank) deck.push({ suit: s, rank: r });
@@ -127,7 +193,7 @@ class WhistGame {
     return deck;
   }
 
-  _resetForNextHand() {
+  private _resetForNextHand(): void {
     this.phase = 'waiting'; // waiting|choose_trump|bidding|playing|hand_end|game_end
     this.trumpSuit = null;
     this.hands = {}; // pid => Card[]
@@ -144,7 +210,7 @@ class WhistGame {
     }
   }
 
-  startHand() {
+  startHand(): PublicState {
     this._resetForNextHand();
     const handSize = this.currentHandSize;
 
@@ -160,7 +226,8 @@ class WhistGame {
     for (let i = 0; i < handSize; i++) {
       for (let p = 0; p < this.numPlayers; p++) {
         const pid = this.playerIds[(startIndex + p) % this.numPlayers];
-        this.hands[pid].push(deck.pop());
+        const card = deck.pop();
+        if (card) this.hands[pid].push(card);
       }
     }
 
@@ -175,11 +242,11 @@ class WhistGame {
     return this.getPublicState();
   }
 
-  getCurrentBidder() {
+  getCurrentBidder(): string {
     return this.playerIds[this.bidTurnIndex];
   }
 
-  _sumBidsSoFar(excludePid) {
+  private _sumBidsSoFar(excludePid: string): number {
     let sum = 0;
     for (const pid of this.playerIds) {
       if (pid === excludePid) continue;
@@ -189,7 +256,7 @@ class WhistGame {
     return sum;
   }
 
-  placeBid(pid, bid) {
+  placeBid(pid: string, bid: number): PublicState {
     if (this.phase !== 'bidding') throw new Error('Not in bidding phase');
     if (pid !== this.getCurrentBidder()) throw new Error('Not your turn to bid');
 
@@ -216,7 +283,7 @@ class WhistGame {
     return this.getPublicState();
   }
 
-  chooseTrump(pid, suit) {
+  chooseTrump(pid: string, suit: Suit): PublicState {
     if (this.phase !== 'choose_trump') throw new Error('Not in choose trump phase');
     if (pid !== this.getCurrentBidder()) throw new Error('Not your turn to choose trump');
     if (!SUITS.includes(suit)) throw new Error('Invalid trump suit');
@@ -225,22 +292,23 @@ class WhistGame {
     return this.getPublicState();
   }
 
-  getCurrentPlayer() {
+  getCurrentPlayer(): string | null {
     if (this.phase !== 'playing') return null;
-    return this.playerIds[this.playTurnIndex];
+    return this.playerIds[this.playTurnIndex ?? 0];
   }
 
-  _hasSuit(pid, suit) {
+  private _hasSuit(pid: string, suit: Suit | null): boolean {
+    if (!suit) return false;
     return this.hands[pid].some(c => c.suit === suit);
   }
 
-  _removeCardFromHand(pid, card) {
+  private _removeCardFromHand(pid: string, card: Card): Card {
     const idx = this.hands[pid].findIndex(c => c.suit === card.suit && c.rank === card.rank);
     if (idx === -1) throw new Error('Card not in hand');
     return this.hands[pid].splice(idx, 1)[0];
   }
 
-  playCard(pid, cardStr) {
+  playCard(pid: string, cardStr: string): { state: PublicState; trickEnded: boolean; trickWinner?: string } {
     if (this.phase !== 'playing') throw new Error('Not in playing phase');
     if (pid !== this.getCurrentPlayer()) throw new Error('Not your turn');
 
@@ -267,7 +335,7 @@ class WhistGame {
     this.currentTrick.push({ pid, card: played });
 
     if (this.currentTrick.length < this.numPlayers) {
-      this.playTurnIndex = (this.playTurnIndex + 1) % this.numPlayers;
+      this.playTurnIndex = ((this.playTurnIndex ?? 0) + 1) % this.numPlayers;
       return { state: this.getPublicState(), trickEnded: false };
     }
 
@@ -300,7 +368,7 @@ class WhistGame {
     return { state: this.getPublicState(), trickEnded: true, trickWinner: winner };
   }
 
-  _scoreHand() {
+  private _scoreHand(): void {
     for (const pid of this.playerIds) {
       const bid = this.bids[pid];
       const won = this.tricksWon[pid];
@@ -309,7 +377,7 @@ class WhistGame {
       if (success) {
         this.totalScores[pid] += 5 + won;
       } else {
-        this.totalScores[pid] -= Math.abs(bid - won);
+        this.totalScores[pid] -= Math.abs((bid ?? 0) - won);
       }
 
       // Streak bonus/penalty rule:
@@ -339,14 +407,14 @@ class WhistGame {
     }
   }
 
-  nextHand() {
+  nextHand(): PublicState {
     if (this.phase !== 'hand_end') throw new Error('Cannot start next hand now');
     this.handIndex += 1;
     this.dealerIndex = (this.dealerIndex + 1) % this.numPlayers;
     return this.startHand();
   }
 
-  resumeAfterTrick() {
+  resumeAfterTrick(): PublicState {
     if (this.phase !== 'trick_pause') throw new Error('Cannot resume trick now');
     this.currentTrick = [];
     this.leadSuit = null;
@@ -356,13 +424,46 @@ class WhistGame {
     return this.getPublicState();
   }
 
-  getLeaderboard() {
+  replacePlayerId(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    const idx = this.playerIds.indexOf(oldId);
+    if (idx === -1) return;
+
+    this.playerIds[idx] = newId;
+
+    if (this.hands[oldId]) {
+      this.hands[newId] = this.hands[oldId];
+      delete this.hands[oldId];
+    }
+    if (Object.prototype.hasOwnProperty.call(this.bids, oldId)) {
+      this.bids[newId] = this.bids[oldId];
+      delete this.bids[oldId];
+    }
+    if (Object.prototype.hasOwnProperty.call(this.tricksWon, oldId)) {
+      this.tricksWon[newId] = this.tricksWon[oldId];
+      delete this.tricksWon[oldId];
+    }
+    if (Object.prototype.hasOwnProperty.call(this.totalScores, oldId)) {
+      this.totalScores[newId] = this.totalScores[oldId];
+      delete this.totalScores[oldId];
+    }
+    if (Object.prototype.hasOwnProperty.call(this.streaks, oldId)) {
+      this.streaks[newId] = this.streaks[oldId];
+      delete this.streaks[oldId];
+    }
+
+    if (this.currentTrick.length) {
+      this.currentTrick = this.currentTrick.map(t => (t.pid === oldId ? { ...t, pid: newId } : t));
+    }
+  }
+
+  getLeaderboard(): { pid: string; score: number }[] {
     return this.playerIds
       .map(pid => ({ pid, score: this.totalScores[pid] }))
       .sort((a, b) => b.score - a.score);
   }
 
-  getPublicState() {
+  getPublicState(): PublicState {
     return {
       phase: this.phase,
       playerIds: [...this.playerIds],
@@ -383,4 +484,5 @@ class WhistGame {
   }
 }
 
-module.exports = { WhistGame, cardToString, stringToCard, SUITS };
+export { WhistGame, cardToString, stringToCard, SUITS };
+export type { Suit, Card, Phase, TrickEntry, Streak, PublicState };

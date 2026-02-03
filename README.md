@@ -23,10 +23,23 @@ This is a small web game (Node.js + Socket.io) with:
 
 ```bash
 npm install
+npm run build
 npm start
 ```
 
 Open: `http://localhost:3000`
+
+For development (two terminals):
+
+```bash
+# terminal 1
+npm run dev:server
+```
+
+```bash
+# terminal 2
+npm run dev:client
+```
 
 ## Share with friends (fast)
 

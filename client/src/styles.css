@@ -419,6 +419,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .winnerName{font-weight:700}
 .winnerScore{font-weight:900}
 .winHint{color:var(--muted);font-size:13px}
+.winActions{
+  margin-top:12px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:center;
+}
 
 /* Fireworks */
 .fireworks{
@@ -754,6 +761,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
 /* Responsive */
 @media (max-width: 980px){
+  .container{padding:10px}
+  .gameShell{margin-top:6px}
+  .tableWrap{margin:8px 0 4px; justify-content:stretch}
+  .centerPanel{width:100%}
+  .card{padding:10px}
   .gameShell{
     display:flex;
     flex-direction:column;
@@ -763,40 +775,43 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .sidePanel.left{ order:2; }
   .sidePanel.right{ order:3; }
   .sidePanel{ position:static; }
-  .table{ height: min(560px, 70svh); }
+  .table{ height: 85svh; max-height: 85svh; width: 100vw; max-width: 100vw; }
   .seat{
-    width:170px;
-    max-width:34%;
+    width:140px;
+    max-width:30%;
     padding:6px;
     border-radius:12px;
   }
   .seat.me{
-    width:230px;
-    max-width:48%;
+    width:200px;
+    max-width:46%;
   }
   .seat .name{font-size:12px}
-  .seat .meta{font-size:11px}
-  .seat .name .badge{height:16px;font-size:10px;padding:0 5px}
+  .seat .meta{display:none}
+  .seat .name .badge{height:14px;font-size:10px;padding:0 4px}
   .seat .handRow{gap:4px}
   .seat.me .handRow{
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap:4px;
   }
   .seat.me .cardBtn{
-    min-width:44px;
-    height:64px;
+    min-width:40px;
+    height:58px;
   }
   .seat:not(.me) .cardBtn{
-    min-width:18px;
-    height:34px;
+    min-width:16px;
+    height:30px;
     flex:0 0 calc(16% - 3px);
     max-width:calc(16% - 3px);
   }
-  /* Re-space side seats to avoid overlap on shorter table */
-  .seat.pos1{right:10px;top:86px}
-  .seat.pos2{right:10px;bottom:86px}
-  .seat.pos4{left:10px;bottom:86px}
-  .seat.pos5{left:10px;top:86px}
+  /* Re-space side seats to avoid overlap and move toward center */
+  .seat.pos1{right:28px;top:120px}
+  .seat.pos2{right:28px;bottom:120px}
+  .seat.pos4{left:28px;bottom:120px}
+  .seat.pos5{left:28px;top:120px}
+  /* Allow top/bottom seats to grow outward */
+  .seat.pos0{top:auto; bottom: calc(100% - 140px);}
+  .seat.pos3{bottom:auto; top: calc(100% - 140px);}
   .chatPanel{
     position:fixed;
     inset:0;

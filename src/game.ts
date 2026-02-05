@@ -228,7 +228,7 @@ class WhistGame {
     // Deal `handSize` cards each, starting from left of dealer
     const startIndex = (this.dealerIndex + 1) % this.numPlayers;
     this.dealStartIndex = startIndex;
-    const initialDeal = handSize === 8 ? 5 : handSize;
+    const initialDeal = handSize;
     for (let i = 0; i < initialDeal; i++) {
       for (let p = 0; p < this.numPlayers; p++) {
         const pid = this.playerIds[(startIndex + p) % this.numPlayers];
@@ -237,10 +237,8 @@ class WhistGame {
       }
     }
 
-    if (handSize === 8) {
-      this.deck = deck;
-    } else {
-      this.deck = null;
+    this.deck = null;
+    if (handSize !== 8) {
       this.sortHands();
     }
 
@@ -296,17 +294,6 @@ class WhistGame {
     if (pid !== this.getCurrentBidder()) throw new Error('Not your turn to choose trump');
     if (!SUITS.includes(suit)) throw new Error('Invalid trump suit');
     this.trumpSuit = suit;
-    if (this.currentHandSize === 8 && this.deck) {
-      // Deal the remaining 3 cards after trump is chosen
-      for (let i = 0; i < 3; i++) {
-        for (let p = 0; p < this.numPlayers; p++) {
-          const pid2 = this.playerIds[(this.dealStartIndex + p) % this.numPlayers];
-          const card = this.deck.pop();
-          if (card) this.hands[pid2].push(card);
-        }
-      }
-      this.deck = null;
-    }
     this.phase = 'bidding';
     return this.getPublicState();
   }

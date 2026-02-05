@@ -18,6 +18,8 @@ type Room = {
   phase: string;
   pauseUntil?: number | null;
   hasPassword?: boolean;
+  playAgainVotes?: number;
+  playAgainNeeded?: number;
 };
 
 type Streak = {
@@ -44,7 +46,7 @@ type PublicState = {
 };
 
 type HandsByPlayer = Record<string, string[]>;
-type ChatMsg = { id: string; name: string; text: string; ts: number };
+type ChatMsg = { id: string; name: string; text: string; ts: number; senderId: string };
 
 type View = 'lobby' | 'room' | 'game';
 
@@ -58,6 +60,8 @@ const LS_CREATE_NAME = 'whist.createName';
 const LS_JOIN_NAME = 'whist.joinName';
 const LS_LAST_ROOM = 'whist.lastRoomId';
 const LS_RECONNECT_PREFIX = 'whist.reconnect.';
+const LS_MUTED = 'whist.muted';
+
 
 function suitName(s: string | null): string {
   switch (s) {
@@ -83,6 +87,18 @@ function cardLabel(cardStr: string): string {
   const rank = cardStr.slice(0, -1);
   return `${rank}${suitName(suit)}`;
 }
+
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
 
 function cardToImageCandidates(cardStr: string): string[] {
   // cardStr: "AS", "10H", "QD" etc.
@@ -184,6 +200,15 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [unreadChat, setUnreadChat] = useState(0);
+  const [playAgainVoted, setPlayAgainVoted] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [showEmojis, setShowEmojis] = useState(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const prevIsMyTurnRef = useRef(false);
+  const youIdRef = useRef<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  const emojis = ['😀', '😅', '😂', '😍', '😎', '😭', '😡', '👍', '🙏', '🔥', '🎉', '🂡', '🐟'];
 
   const showToast = useCallback((message: string, ms = 2200) => {
     setToast({ message, visible: true });
@@ -195,6 +220,8 @@ export default function App() {
     const savedJoin = window.localStorage.getItem(LS_JOIN_NAME) || '';
     if (savedCreate) setCreateName(savedCreate);
     if (savedJoin) setJoinName(savedJoin);
+    const savedMuted = window.localStorage.getItem(LS_MUTED);
+    if (savedMuted === '1') setMuted(true);
   }, []);
 
   useEffect(() => {
@@ -242,6 +269,7 @@ export default function App() {
 
     socket.on('room:joined', ({ roomId, youId: yid, reconnectToken, rejoined }: { roomId: string; youId: string; reconnectToken?: string; rejoined?: boolean }) => {
       setYouId(yid);
+      youIdRef.current = yid;
       setView('room');
       window.localStorage.setItem(LS_LAST_ROOM, roomId);
       if (reconnectToken) {
@@ -272,7 +300,10 @@ export default function App() {
 
     socket.on('chat:message', (msg: ChatMsg) => {
       setChatMessages(prev => [...prev, msg]);
-      setUnreadChat(prev => (chatOpen ? prev : prev + 1));
+      const selfId = youIdRef.current || socket.id;
+      if (!chatOpen && msg.senderId !== selfId) {
+        setUnreadChat(prev => prev + 1);
+      }
     });
 
     socket.on('error:msg', ({ message }: { message: string }) => {
@@ -281,6 +312,19 @@ export default function App() {
         window.localStorage.removeItem(LS_LAST_ROOM);
       }
       showToast(msg);
+    });
+
+    socket.on('room:closed', () => {
+      setRoom(null);
+      setState(null);
+      setHandsByPlayer({});
+      setChatOpen(false);
+      setChatMessages([]);
+      setUnreadChat(0);
+      setView('lobby');
+      window.localStorage.removeItem(LS_LAST_ROOM);
+      attemptedRejoinRef.current = false;
+      socket.emit('lobby:list');
     });
 
     return () => {
@@ -296,12 +340,28 @@ export default function App() {
   }, [state, youId]);
 
   useEffect(() => {
+    if (!state || state.phase !== 'game_end') {
+      setPlayAgainVoted(false);
+    }
+  }, [state?.phase, room?.id]);
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    if (!chatEndRef.current) return;
+    chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [chatOpen, chatMessages.length]);
+
+  useEffect(() => {
     window.localStorage.setItem(LS_CREATE_NAME, createName);
   }, [createName]);
 
   useEffect(() => {
     window.localStorage.setItem(LS_JOIN_NAME, joinName);
   }, [joinName]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LS_MUTED, muted ? '1' : '0');
+  }, [muted]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -552,9 +612,34 @@ export default function App() {
 
         {state.phase === 'game_end' && (
           <div className="sideBox">
-            <button className="primary" style={{ width: '100%' }} onClick={handleBackToLobby}>
-              Înapoi la lobby
-            </button>
+            <div className="row gap" style={{ flexDirection: 'column' }}>
+              <div className="muted small">{`Voturi: ${room?.playAgainVotes ?? 0}/${room?.playAgainNeeded ?? 0}`}</div>
+              <button
+                className="primary"
+                style={{ width: '100%' }}
+                disabled={playAgainVoted || onCooldown('playAgainVote')}
+                onClick={() => {
+                  if (onCooldown('playAgainVote')) return;
+                  triggerCooldown('playAgainVote', 800);
+                  socketRef.current?.emit('room:playAgainVote');
+                  setPlayAgainVoted(true);
+                }}
+              >
+                Votează Play again
+              </button>
+              <button
+                style={{ width: '100%' }}
+                disabled={!amHost || onCooldown('closeRoom')}
+                onClick={() => {
+                  if (onCooldown('closeRoom')) return;
+                  triggerCooldown('closeRoom', 800);
+                  socketRef.current?.emit('room:close');
+                }}
+              >
+                Închide room
+              </button>
+              {!amHost && <div className="muted small">Doar hostul poate porni un nou room.</div>}
+            </div>
           </div>
         )}
       </aside>
@@ -570,8 +655,26 @@ export default function App() {
 
     return (
       <aside className="sidePanel right">
-        <div className="sideBox">
-          <div className="sideTitle">🏆 Scoreboard</div>
+        <div className="sideBox scoreWrap">
+          <div className="scoreHeader">
+            <div className="sideTitle">🏆 Scoreboard</div>
+            <button
+              className="chatToggle"
+              disabled={!canChat}
+              onClick={() => {
+                setChatOpen(v => {
+                  const next = !v;
+                  if (next) setUnreadChat(0);
+                  return next;
+                });
+              }}
+              aria-label="Chat"
+              title="Chat"
+            >
+              💬
+              {hasUnread && <span className="chatBadge">{unreadChat}</span>}
+            </button>
+          </div>
           <div className="list">
             {ordered.map(pid => {
               const p = room.players.find(x => x.id === pid);
@@ -593,6 +696,63 @@ export default function App() {
               );
             })}
           </div>
+
+          {chatOpen && (
+            <div className="chatPanel">
+              <div className="chatHeader">
+                <div className="chatTitle">Chat</div>
+                <button className="chatClose" onClick={() => setChatOpen(false)}>✕</button>
+              </div>
+              <div className="chatBody">
+                {chatMessages.length === 0 && <div className="muted small">Niciun mesaj încă.</div>}
+                {chatMessages.map(m => (
+                  <div className="chatMsg" key={m.id}>
+                    <span className="chatName">{m.name}</span>
+                    <span className="chatText">{m.text}</span>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="chatInputRow">
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  placeholder="Scrie un mesaj…"
+                  maxLength={240}
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return;
+                    sendChat();
+                  }}
+                />
+                <button
+                  className="emojiToggle"
+                  type="button"
+                  onClick={() => setShowEmojis(v => !v)}
+                  aria-label="Emoticons"
+                  title="Emoticons"
+                >
+                  🙂
+                </button>
+                <button className="sendBtn" disabled={!canChat} onClick={sendChat} aria-label="Trimite">
+                  ➤
+                </button>
+              </div>
+              {showEmojis && (
+                <div className="emojiRow">
+                  {emojis.map(e => (
+                    <button
+                      key={e}
+                      type="button"
+                      className="emojiBtn"
+                      onClick={() => setChatInput(prev => `${prev}${e}`)}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {state.phase === 'hand_end' && (
@@ -630,6 +790,41 @@ export default function App() {
   const isPaused = pauseRemaining > 0;
   const canChat = isInRoom && isConnected;
   const hasUnread = unreadChat > 0;
+  const leaderboard = state?.leaderboard || [];
+  const isMyBidTurn = !!(state && youId && state.phase === 'bidding' && state.currentBidderId === youId);
+  const isMyPlayTurn = !!(state && youId && state.phase === 'playing' && state.currentPlayerId === youId);
+  const isMyTurn = isMyBidTurn || isMyPlayTurn;
+
+  const playPing = useCallback(() => {
+    if (muted) return;
+    let ctx = audioCtxRef.current;
+    if (!ctx) {
+      ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+    }
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 660;
+    gain.gain.value = 0.0001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const nowTime = ctx.currentTime;
+    gain.gain.exponentialRampToValueAtTime(0.08, nowTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, nowTime + 0.22);
+    osc.start(nowTime);
+    osc.stop(nowTime + 0.25);
+  }, [muted]);
+
+  useEffect(() => {
+    if (isMyTurn && !prevIsMyTurnRef.current) {
+      playPing();
+    }
+    prevIsMyTurnRef.current = isMyTurn;
+  }, [isMyTurn, playPing]);
 
   const sendChat = useCallback(() => {
     if (!canChat) return;
@@ -641,11 +836,27 @@ export default function App() {
     setChatInput('');
   }, [canChat, chatInput, onCooldown, triggerCooldown]);
 
+
   return (
     <>
       <header className="topbar">
         <div className="brand">🂡 Whist</div>
-        <div className="pill" style={{ borderColor: connBorder }}>{connStatus}</div>
+        <div className="topbarRight">
+          <div className="pill" style={{ borderColor: connBorder }}>{connStatus}</div>
+          <button
+            className="muteToggle"
+            onClick={() => {
+              const next = !muted;
+              setMuted(next);
+              if (!next) {
+                if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+                if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+              }
+            }}
+          >
+            {muted ? 'Muted' : 'Sound On'}
+          </button>
+        </div>
       </header>
 
       <main className="container">
@@ -813,29 +1024,31 @@ export default function App() {
                 {rejoinNotice && <div className="notice">{rejoinNotice}</div>}
 
                 <div className="actionRow">
-                  <div className={`trumpArea ${!(state?.phase === 'choose_trump' && state?.currentBidderId === youId && state?.cardsPerPlayer === 8) ? 'hidden' : ''}`}>
-                  <div className="row gap">
-                    <label className="inline">Alege ATU:</label>
-                    <div className="trumpButtons">
-                      {(['S', 'H', 'D', 'C'] as const).map(s => (
-                        <button
-                          key={`trump-${s}`}
-                          type="button"
-                          className={`primary trumpBtn ${isRedSuit(s) ? 'red' : 'black'}`}
-                          disabled={!isInRoom || onCooldown('chooseTrump')}
-                          onClick={() => {
-                            if (onCooldown('chooseTrump')) return;
-                            triggerCooldown('chooseTrump', 400);
-                            socketRef.current?.emit('game:chooseTrump', { suit: s });
-                          }}
-                        >
-                          {suitName(s)}
-                        </button>
-                      ))}
+                  {state?.phase === 'choose_trump' && state?.currentBidderId === youId && state?.cardsPerPlayer === 8 && (
+                    <div className="trumpArea">
+                      <div className="row gap">
+                        <label className="inline">Alege ATU:</label>
+                        <div className="trumpButtons">
+                          {(['S', 'H', 'D', 'C'] as const).map(s => (
+                            <button
+                              key={`trump-${s}`}
+                              type="button"
+                              className={`primary trumpBtn ${isRedSuit(s) ? 'red' : 'black'}`}
+                              disabled={!isInRoom || onCooldown('chooseTrump')}
+                              onClick={() => {
+                                if (onCooldown('chooseTrump')) return;
+                                triggerCooldown('chooseTrump', 400);
+                                socketRef.current?.emit('game:chooseTrump', { suit: s });
+                              }}
+                            >
+                              {suitName(s)}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="muted">Alege atu-ul pentru această mână.</span>
+                      </div>
                     </div>
-                    <span className="muted">Alege atu-ul pentru această mână.</span>
-                  </div>
-                </div>
+                  )}
 
                 <div className={`bidArea ${!(state?.phase === 'bidding' && state?.currentBidderId === youId) ? 'hidden' : ''}`}>
                   <div className="row gap">
@@ -852,20 +1065,6 @@ export default function App() {
                         }}
                       >
                         Trimite
-                      </button>
-                      <button
-                        className="chatToggle"
-                        disabled={!canChat}
-                        onClick={() => {
-                          setChatOpen(v => {
-                            const next = !v;
-                            if (next) setUnreadChat(0);
-                            return next;
-                          });
-                        }}
-                      >
-                        Chat
-                        {hasUnread && <span className="chatBadge">{unreadChat}</span>}
                       </button>
                       {youId === state?.dealerId && (
                         <span className="muted">
@@ -888,41 +1087,40 @@ export default function App() {
                       )}
                     </div>
                 </div>
-                {chatOpen && (
-                  <div className="chatPanel">
-                    <div className="chatHeader">
-                      <div className="chatTitle">Chat</div>
-                      <button className="chatClose" onClick={() => setChatOpen(false)}>✕</button>
-                    </div>
-                    <div className="chatBody">
-                      {chatMessages.length === 0 && <div className="muted small">Niciun mesaj încă.</div>}
-                      {chatMessages.map(m => (
-                        <div className="chatMsg" key={m.id}>
-                          <span className="chatName">{m.name}</span>
-                          <span className="chatText">{m.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="chatInputRow">
-                      <input
-                        value={chatInput}
-                        onChange={e => setChatInput(e.target.value)}
-                        placeholder="Scrie un mesaj…"
-                        maxLength={240}
-                        onKeyDown={e => {
-                          if (e.key !== 'Enter') return;
-                          sendChat();
-                        }}
-                      />
-                      <button className="primary" disabled={!canChat} onClick={sendChat}>Trimite</button>
-                    </div>
-                  </div>
-                )}
                 </div>
               </main>
 
               {renderRightPanel()}
             </div>
+
+            {state?.phase === 'game_end' && (
+              <div className="winOverlay">
+                <div className="winCard">
+                  <div className="winTitle">Game Over</div>
+                  <div className="winSubtitle">Final Rankings</div>
+                  <div className="winList">
+                    {leaderboard.map((lb, idx) => {
+                      const name = room?.players.find(p => p.id === lb.pid)?.name || lb.pid;
+                      return (
+                        <div className={`winRow place${idx + 1}`} key={`win-${lb.pid}`}>
+                          <span className="place">{ordinal(idx + 1)}</span>
+                          <span className="winnerName">{name}</span>
+                          <span className="winnerScore">{lb.score}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="winHint">Votează Play again sau închide room-ul.</div>
+                </div>
+                <div className="fireworks">
+                  <span className="spark s1" />
+                  <span className="spark s2" />
+                  <span className="spark s3" />
+                  <span className="spark s4" />
+                  <span className="spark s5" />
+                </div>
+              </div>
+            )}
 
             <div className="notice small">
               Click pe o carte din mâna ta ca s-o joci (doar când e rândul tău). Cartile sunt vizibile pentru toți.

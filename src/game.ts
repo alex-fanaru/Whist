@@ -134,6 +134,8 @@ class WhistGame {
   pendingPlayTurnIndex: number | null;
   bidTurnIndex: number;
   playTurnIndex: number | null;
+  deck: Card[] | null;
+  dealStartIndex: number;
 
   constructor({ playerIds, dealerIndex = 0 }: { playerIds: string[]; dealerIndex?: number }) {
     this.playerIds = [...playerIds];
@@ -159,6 +161,8 @@ class WhistGame {
     this.pendingPlayTurnIndex = null;
     this.bidTurnIndex = 0;
     this.playTurnIndex = null;
+    this.deck = null;
+    this.dealStartIndex = 0;
 
     this._resetForNextHand();
   }
@@ -223,7 +227,9 @@ class WhistGame {
 
     // Deal `handSize` cards each, starting from left of dealer
     const startIndex = (this.dealerIndex + 1) % this.numPlayers;
-    for (let i = 0; i < handSize; i++) {
+    this.dealStartIndex = startIndex;
+    const initialDeal = handSize === 8 ? 5 : handSize;
+    for (let i = 0; i < initialDeal; i++) {
       for (let p = 0; p < this.numPlayers; p++) {
         const pid = this.playerIds[(startIndex + p) % this.numPlayers];
         const card = deck.pop();
@@ -231,9 +237,11 @@ class WhistGame {
       }
     }
 
-    // sort hands for nicer UI
-    for (const pid of this.playerIds) {
-      this.hands[pid].sort((a, b) => (a.suit === b.suit ? a.rank - b.rank : a.suit.localeCompare(b.suit)));
+    if (handSize === 8) {
+      this.deck = deck;
+    } else {
+      this.deck = null;
+      this.sortHands();
     }
 
     this.bidTurnIndex = startIndex; // bidding starts left of dealer
@@ -288,6 +296,17 @@ class WhistGame {
     if (pid !== this.getCurrentBidder()) throw new Error('Not your turn to choose trump');
     if (!SUITS.includes(suit)) throw new Error('Invalid trump suit');
     this.trumpSuit = suit;
+    if (this.currentHandSize === 8 && this.deck) {
+      // Deal the remaining 3 cards after trump is chosen
+      for (let i = 0; i < 3; i++) {
+        for (let p = 0; p < this.numPlayers; p++) {
+          const pid2 = this.playerIds[(this.dealStartIndex + p) % this.numPlayers];
+          const card = this.deck.pop();
+          if (card) this.hands[pid2].push(card);
+        }
+      }
+      this.deck = null;
+    }
     this.phase = 'bidding';
     return this.getPublicState();
   }
@@ -422,6 +441,12 @@ class WhistGame {
     this.pendingPlayTurnIndex = null;
     this.phase = 'playing';
     return this.getPublicState();
+  }
+
+  sortHands(): void {
+    for (const pid of this.playerIds) {
+      this.hands[pid].sort((a, b) => (a.suit === b.suit ? a.rank - b.rank : a.suit.localeCompare(b.suit)));
+    }
   }
 
   replacePlayerId(oldId: string, newId: string): void {

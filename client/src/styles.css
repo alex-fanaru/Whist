@@ -29,6 +29,7 @@ hr{border:0;border-top:1px solid var(--border);margin:14px 0}
   border-bottom:1px solid var(--border);
 }
 .brand{font-weight:800;letter-spacing:.3px}
+.topbarRight{display:flex;align-items:center;gap:10px}
 .container{max-width:1500px;margin:0 auto;padding:18px}
 .view.hidden{display:none}
 
@@ -71,6 +72,14 @@ button.primary{
   border-color: rgba(94,234,212,.35);
 }
 button:disabled{opacity:.5;cursor:not-allowed}
+.muteToggle{
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(10,16,30,.55);
+  color:var(--text);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+}
 
 .row{display:flex;align-items:center;gap:10px}
 .row.space{justify-content:space-between}
@@ -226,9 +235,14 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .seat .meta{color:var(--muted);font-size:12px}
 .seat .handRow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.seat.me .handRow{
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap:6px;
+}
 .seat.me .cardBtn{
-  flex:0 0 calc(25% - 3px);
-  max-width:calc(25% - 3px);
+  width:100%;
+  max-width:100%;
 }
 .seat:not(.me) .handRow{gap:4px}
 .seat:not(.me) .cardBtn{
@@ -361,13 +375,84 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .toast.hidden{display:none}
 
+/* Win screen */
+.winOverlay{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(6,10,20,.6);
+  backdrop-filter: blur(4px);
+  z-index:9;
+}
+.winCard{
+  width:min(520px, 92vw);
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:18px;
+  padding:18px;
+  text-align:center;
+  box-shadow: 0 18px 50px rgba(0,0,0,.45);
+}
+.winTitle{font-size:24px;font-weight:900;margin-bottom:4px}
+.winSubtitle{color:var(--muted);margin-bottom:12px}
+.winList{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-bottom:10px;
+}
+.winRow{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.04);
+}
+.winRow.place1{box-shadow: inset 0 0 0 1px rgba(250,204,21,.4)}
+.winRow.place2{box-shadow: inset 0 0 0 1px rgba(148,163,184,.4)}
+.winRow.place3{box-shadow: inset 0 0 0 1px rgba(234,88,12,.4)}
+.place{font-weight:800;min-width:60px;text-align:left}
+.winnerName{font-weight:700}
+.winnerScore{font-weight:900}
+.winHint{color:var(--muted);font-size:13px}
+
+/* Fireworks */
+.fireworks{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+.spark{
+  position:absolute;
+  width:8px;height:8px;border-radius:50%;
+  background:rgba(94,234,212,.9);
+  box-shadow:0 0 12px rgba(94,234,212,.9);
+  animation: pop 1.6s infinite ease-out;
+}
+.spark.s1{left:20%;top:20%}
+.spark.s2{left:80%;top:25%;animation-delay:.3s;background:#facc15;box-shadow:0 0 12px #facc15}
+.spark.s3{left:70%;top:70%;animation-delay:.6s;background:#fb7185;box-shadow:0 0 12px #fb7185}
+.spark.s4{left:30%;top:75%;animation-delay:.9s;background:#60a5fa;box-shadow:0 0 12px #60a5fa}
+.spark.s5{left:50%;top:15%;animation-delay:1.2s;background:#a78bfa;box-shadow:0 0 12px #a78bfa}
+
+@keyframes pop{
+  0%{transform:scale(0);opacity:0}
+  40%{transform:scale(1);opacity:1}
+  100%{transform:scale(1.8);opacity:0}
+}
+
 /* Chat */
 .chatToggle{
   position:relative;
   border:1px solid rgba(255,255,255,.16);
   background:rgba(10,16,30,.65);
   border-radius:10px;
-  padding:8px 10px;
+  padding:6px 8px;
+  font-size:16px;
 }
 .chatFab{
   display:none;
@@ -400,11 +485,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .chatPanel{
   position:absolute;
+  left:0;
   right:0;
-  top:0;
-  width:280px;
-  max-width:70vw;
-  height:280px;
+  top:calc(100% + 8px);
+  width:auto;
+  height:300px;
   background:rgba(12,18,34,.95);
   border:1px solid rgba(255,255,255,.12);
   border-radius:14px;
@@ -455,6 +540,33 @@ button:disabled{opacity:.5;cursor:not-allowed}
   border-top:1px solid rgba(255,255,255,.08);
 }
 .chatInputRow input{flex:1}
+.emojiToggle{
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(10,16,30,.65);
+  border-radius:10px;
+  padding:6px 8px;
+}
+.sendBtn{
+  border:1px solid rgba(94,234,212,.35);
+  background: linear-gradient(135deg, rgba(94,234,212,.22), rgba(94,234,212,.08));
+  border-radius:10px;
+  padding:6px 10px;
+  font-weight:900;
+}
+.emojiRow{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:8px 12px 12px 12px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.emojiBtn{
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(10,16,30,.6);
+  border-radius:10px;
+  padding:4px 6px;
+  font-size:16px;
+}
 
 /* Invite modal */
 .modalOverlay{
@@ -538,6 +650,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
   padding:12px;
   margin-bottom:12px;
 }
+.scoreWrap{position:relative}
+.scoreHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .sideTitle{
   font-weight:800;
   letter-spacing:.2px;
@@ -652,9 +766,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .seat .meta{font-size:11px}
   .seat .name .badge{height:16px;font-size:10px;padding:0 5px}
   .seat .handRow{gap:4px}
+  .seat.me .handRow{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:4px;
+  }
   .seat.me .cardBtn{
-    flex:0 0 calc(22% - 3px);
-    max-width:calc(22% - 3px);
     min-width:44px;
     height:64px;
   }
@@ -685,4 +801,5 @@ button:disabled{opacity:.5;cursor:not-allowed}
     align-items:center;
     gap:6px;
   }
+  .winCard{padding:14px}
 }

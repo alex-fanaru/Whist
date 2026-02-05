@@ -26,9 +26,11 @@ interface Room {
   game: WhistGame | null;
   nextHandTimer?: NodeJS.Timeout | null;
   trickPauseTimer?: NodeJS.Timeout | null;
+  sortHandsTimer?: NodeJS.Timeout | null;
   pauseUntil?: number | null;
   password?: string | null;
-  chat?: Array<{ id: string; name: string; text: string; ts: number }>;
+  chat?: Array<{ id: string; name: string; text: string; ts: number; senderId: string }>;
+  playAgainVotes?: Set<string>;
 }
 
 interface PublicRoom {
@@ -41,6 +43,8 @@ interface PublicRoom {
   phase: string;
   pauseUntil?: number | null;
   hasPassword?: boolean;
+  playAgainVotes?: number;
+  playAgainNeeded?: number;
 }
 
 /**
@@ -88,6 +92,7 @@ function token(len = 18): string {
 }
 
 function getRoomPublic(room: Room): PublicRoom {
+  const onlineHumans = room.players.filter(p => !p.isBot && !p.offline);
   return {
     id: room.id,
     name: room.name,
@@ -98,6 +103,8 @@ function getRoomPublic(room: Room): PublicRoom {
     phase: room.game ? String(room.game.getPublicState().phase) : 'waiting',
     pauseUntil: room.pauseUntil ?? null,
     hasPassword: !!room.password,
+    playAgainVotes: room.playAgainVotes ? room.playAgainVotes.size : 0,
+    playAgainNeeded: onlineHumans.length,
   };
 }
 
@@ -143,6 +150,19 @@ function scheduleResumeAfterTrick(room: Room, delayMs = 5000): void {
     room.game.resumeAfterTrick();
     sendStateToAll(room);
     maybeBotAct(room);
+  }, delayMs);
+}
+
+function scheduleSortHands(room: Room, delayMs = 2500): void {
+  if (!room?.game) return;
+  if (room.game.currentHandSize !== 8) return;
+  if (room.sortHandsTimer) return;
+  room.sortHandsTimer = setTimeout(() => {
+    room.sortHandsTimer = null;
+    if (!room.game) return;
+    if (room.game.currentHandSize !== 8) return;
+    room.game.sortHands();
+    sendStateToAll(room);
   }, delayMs);
 }
 
@@ -302,6 +322,21 @@ function clearPauseIfAllOnline(room: Room): boolean {
   return false;
 }
 
+function getOnlineHumans(room: Room): Player[] {
+  return room.players.filter(p => !p.isBot && !p.offline);
+}
+
+function maybeStartPlayAgain(room: Room): void {
+  if (!room.game || room.game.phase !== 'game_end') return;
+  const onlineHumans = getOnlineHumans(room);
+  if (onlineHumans.length === 0) return;
+  const votes = room.playAgainVotes ? room.playAgainVotes.size : 0;
+  if (votes >= onlineHumans.length) {
+    const hostSocketId = onlineHumans.find(p => p.id === room.hostId)?.id || onlineHumans[0].id;
+    playAgain(room, hostSocketId);
+  }
+}
+
 function getPlayerName(room: Room, pid: string): string {
   return room.players.find(p => p.id === pid)?.name || 'Player';
 }
@@ -311,6 +346,55 @@ function cleanupRoomIfEmpty(room: Room): void {
     rooms.delete(room.id);
     broadcastLobby();
   }
+}
+
+function closeRoom(room: Room): void {
+  for (const p of room.players) {
+    if (p.isBot) continue;
+    const sock = io.sockets.sockets.get(p.id);
+    if (sock) {
+      sock.leave(room.id);
+      socketToRoom.delete(p.id);
+    }
+  }
+  rooms.delete(room.id);
+  io.to(room.id).emit('room:closed', { roomId: room.id });
+  broadcastLobby();
+}
+
+function playAgain(room: Room, hostSocketId: string): void {
+  const onlineHumans = room.players.filter(p => !p.isBot && !p.offline);
+  if (onlineHumans.length === 0) return;
+
+  const newRoomId = rid(6);
+  const newRoom: Room = {
+    id: newRoomId,
+    name: `${room.name} (rematch)`,
+    createdAt: Date.now(),
+    hostId: hostSocketId,
+    players: onlineHumans.map(p => ({
+      id: p.id,
+      name: p.name,
+      isBot: false,
+      offline: false,
+      reconnectToken: p.reconnectToken,
+    })),
+    game: null,
+    password: room.password || null,
+    chat: [],
+    playAgainVotes: new Set(),
+  };
+
+  rooms.set(newRoomId, newRoom);
+  for (const p of onlineHumans) {
+    const sock = io.sockets.sockets.get(p.id);
+    if (!sock) continue;
+    socketToRoom.set(p.id, newRoomId);
+    sock.join(newRoomId);
+    sock.emit('room:joined', { roomId: newRoomId, youId: p.id, reconnectToken: p.reconnectToken });
+  }
+  emitRoomUpdate(newRoom);
+  closeRoom(room);
 }
 
 io.on('connection', socket => {
@@ -334,6 +418,7 @@ io.on('connection', socket => {
         game: null,
         password: pass,
         chat: [],
+        playAgainVotes: new Set(),
       };
 
       rooms.set(id, room);
@@ -378,6 +463,10 @@ io.on('connection', socket => {
           room.game.replacePlayerId(oldId, socket.id);
         }
         if (room.hostId === oldId) room.hostId = socket.id;
+        if (room.playAgainVotes) {
+          room.playAgainVotes.delete(oldId);
+          room.playAgainVotes.add(socket.id);
+        }
       } else {
         if (room.players.length >= 6) throw new Error('Room is full (max 6)');
         const rtoken = token();
@@ -403,6 +492,9 @@ io.on('connection', socket => {
       if (clearPauseIfAllOnline(room)) {
         emitRoomUpdate(room);
         if (room.game) sendStateToAll(room);
+      }
+      if (room.game?.phase === 'game_end') {
+        maybeStartPlayAgain(room);
       }
     } catch (e) {
       const err = e as Error;
@@ -436,6 +528,7 @@ io.on('connection', socket => {
     }
 
     emitRoomUpdate(room);
+    if (room.game?.phase === 'game_end') maybeStartPlayAgain(room);
     cleanupRoomIfEmpty(room);
   });
 
@@ -532,6 +625,7 @@ io.on('connection', socket => {
       room.game.chooseTrump(socket.id, String(suit) as 'S' | 'H' | 'D' | 'C');
       sendStateToAll(room);
       maybeBotAct(room);
+      scheduleSortHands(room, 2500);
     } catch (e) {
       const roomId = socketToRoom.get(socket.id);
       const room = roomId ? rooms.get(roomId) : undefined;
@@ -560,6 +654,54 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on('room:close', () => {
+    try {
+      if (!canAct(socket, 'room:close', 800)) throw new Error('Prea rapid. Încearcă din nou.');
+      const roomId = socketToRoom.get(socket.id);
+      if (!roomId) throw new Error('Not in a room');
+      const room = rooms.get(roomId);
+      if (!room) throw new Error('Not in a room');
+      if (!isHost(room, socket.id)) throw new Error('Only host can close');
+      closeRoom(room);
+    } catch (e) {
+      const err = e as Error;
+      socket.emit('error:msg', { message: err.message || 'Cannot close room' });
+    }
+  });
+
+  socket.on('room:playAgain', () => {
+    try {
+      if (!canAct(socket, 'room:playAgain', 800)) throw new Error('Prea rapid. Încearcă din nou.');
+      const roomId = socketToRoom.get(socket.id);
+      if (!roomId) throw new Error('Not in a room');
+      const room = rooms.get(roomId);
+      if (!room) throw new Error('Not in a room');
+      if (!isHost(room, socket.id)) throw new Error('Only host can start a new room');
+      playAgain(room, socket.id);
+    } catch (e) {
+      const err = e as Error;
+      socket.emit('error:msg', { message: err.message || 'Cannot start new room' });
+    }
+  });
+
+  socket.on('room:playAgainVote', () => {
+    try {
+      if (!canAct(socket, 'room:playAgainVote', 800)) throw new Error('Prea rapid. Încearcă din nou.');
+      const roomId = socketToRoom.get(socket.id);
+      if (!roomId) throw new Error('Not in a room');
+      const room = rooms.get(roomId);
+      if (!room) throw new Error('Not in a room');
+      if (!room.game || room.game.phase !== 'game_end') throw new Error('Not in game end');
+      if (!room.playAgainVotes) room.playAgainVotes = new Set();
+      room.playAgainVotes.add(socket.id);
+      emitRoomUpdate(room);
+      maybeStartPlayAgain(room);
+    } catch (e) {
+      const err = e as Error;
+      socket.emit('error:msg', { message: err.message || 'Cannot vote' });
+    }
+  });
+
   socket.on('chat:send', ({ text }: { text?: string }) => {
     try {
       if (!canAct(socket, 'chat:send', 300)) throw new Error('Prea rapid. Încearcă din nou.');
@@ -574,6 +716,7 @@ io.on('connection', socket => {
         name: getPlayerName(room, socket.id),
         text: msg,
         ts: Date.now(),
+        senderId: socket.id,
       };
       if (!room.chat) room.chat = [];
       room.chat.push(entry);
@@ -594,6 +737,7 @@ io.on('connection', socket => {
 
     const p = room.players.find(x => x.id === socket.id);
     if (p) p.offline = true;
+    if (room.playAgainVotes) room.playAgainVotes.delete(socket.id);
 
     const onlineHumans = room.players.filter(x => !x.isBot && !x.offline);
     if (room.hostId === socket.id && onlineHumans.length) {
@@ -605,6 +749,7 @@ io.on('connection', socket => {
     }
     // keep game state; allow reconnect within pause window
     emitRoomUpdate(room);
+    if (room.game?.phase === 'game_end') maybeStartPlayAgain(room);
     cleanupRoomIfEmpty(room);
   });
 });

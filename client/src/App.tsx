@@ -1086,6 +1086,19 @@ export default function App() {
                         </span>
                       )}
                     </div>
+                    <div className="chatMobileRow">
+                      <button
+                        className="chatToggleMobile"
+                        disabled={!canChat}
+                        onClick={() => {
+                          setChatOpen(true);
+                          setUnreadChat(0);
+                        }}
+                      >
+                        Chat
+                        {hasUnread && <span className="chatBadge">{unreadChat}</span>}
+                      </button>
+                    </div>
                 </div>
                 </div>
               </main>

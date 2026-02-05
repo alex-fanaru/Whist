@@ -1,9 +1,3 @@
 node_modules
 dist
-public
-client/public/*
-!client/public/cards/
-!client/public/cards/**
-!client/public/emojis/
-!client/public/emojis/**
 .DS_Store

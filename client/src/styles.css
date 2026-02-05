@@ -466,6 +466,18 @@ button:disabled{opacity:.5;cursor:not-allowed}
   background:rgba(12,18,34,.9);
   color:var(--text);
 }
+.chatMobileRow{
+  display:none;
+  margin-top:8px;
+  justify-content:flex-end;
+}
+.chatToggleMobile{
+  position:relative;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(10,16,30,.65);
+  border-radius:10px;
+  padding:6px 10px;
+}
 .chatBadge{
   position:absolute;
   top:-6px;
@@ -787,19 +799,18 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .seat.pos5{left:10px;top:86px}
   .chatPanel{
     position:fixed;
-    left:8px;
-    right:8px;
-    bottom:8px;
-    top:auto;
+    inset:0;
     width:auto;
-    height:45vh;
+    height:auto;
     max-width:none;
+    border-radius:0;
     z-index:12;
   }
   .chatFab{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
+    display:none;
+  }
+  .chatMobileRow{
+    display:flex;
   }
   .winCard{padding:14px}
 }

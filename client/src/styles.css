@@ -803,3 +803,48 @@ button:disabled{opacity:.5;cursor:not-allowed}
   }
   .winCard{padding:14px}
 }
+
+/* Narrow phones (iPhone SE / small Android widths, and landscape) */
+@media (max-width: 480px){
+  .container{ padding:10px; }
+  .topbar{ padding:10px 12px; }
+  .table{ height: min(78vh, 340px); }
+  .seat{
+    width:128px;
+    max-width:33%;
+    padding:5px;
+    border-radius:10px;
+  }
+  .seat.me{
+    width:190px;
+    max-width:58%;
+  }
+  .seat .name{font-size:11px}
+  .seat .meta{font-size:10px}
+  .seat .name .badge{height:14px;font-size:9px;padding:0 4px}
+  .seat.me .handRow{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:3px;
+  }
+  .seat.me .cardBtn{
+    min-width:34px;
+    height:50px;
+  }
+  .seat:not(.me) .cardBtn{
+    min-width:14px;
+    height:26px;
+    flex:0 0 calc(16% - 2px);
+    max-width:calc(16% - 2px);
+  }
+  .seat.pos0{top:10px}
+  .seat.pos3{bottom:10px}
+  .seat.pos1{right:6px;top:64px}
+  .seat.pos2{right:6px;bottom:64px}
+  .seat.pos4{left:6px;bottom:64px}
+  .seat.pos5{left:6px;top:64px}
+  .centerTitle{font-size:11px}
+  .trick{ width:220px; max-width:70%; padding:6px; }
+  .trickCard{ min-width:40px; height:56px; }
+  .bidButtons{ flex-wrap:wrap; }
+  .actionRow{ padding-bottom: env(safe-area-inset-bottom, 0px); }
+}

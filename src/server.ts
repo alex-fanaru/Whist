@@ -443,14 +443,22 @@ io.on('connection', socket => {
       const existingByToken = reconnectToken
         ? room.players.find(p => !p.isBot && p.reconnectToken === reconnectToken)
         : undefined;
-      const existingOffline = existingByToken || room.players.find(p => !p.isBot && p.offline && p.name === pname);
 
-      if (room.password && !existingByToken) {
+      // Fallback when the reconnect token was lost (common on mobile: the browser
+      // can drop localStorage on background reload, low memory, private tabs, etc).
+      // We only use it when it's unambiguous: exactly one offline human with that name.
+      const offlineNameMatches = existingByToken
+        ? []
+        : room.players.filter(p => !p.isBot && p.offline && p.name.trim().toLowerCase() === pname.trim().toLowerCase());
+      const existingByName = offlineNameMatches.length === 1 ? offlineNameMatches[0] : undefined;
+      const existingOffline = existingByToken || existingByName;
+
+      if (room.password && !existingOffline) {
         const pass = String(password || '').trim();
         if (!pass || pass !== room.password) throw new Error('Room password incorrect');
       }
 
-      if (room.game && !existingByToken) {
+      if (room.game && !existingOffline) {
         throw new Error('Game already started in this room');
       }
 

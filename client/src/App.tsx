@@ -176,6 +176,8 @@ function CardBack({ disabled }: { disabled?: boolean }) {
 export default function App() {
   const socketRef = useRef<Socket | null>(null);
   const attemptedRejoinRef = useRef(false);
+  const awaitingRejoinRef = useRef(false);
+  const rejoinRetriesRef = useRef(0);
   const [view, setView] = useState<View>('lobby');
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -240,23 +242,40 @@ export default function App() {
 
   useEffect(() => {
     const socketUrl = import.meta.env.VITE_SOCKET_URL || (import.meta.env.DEV ? 'http://localhost:3000' : undefined);
-    const socket = io(socketUrl, { autoConnect: true });
+    const socket = io(socketUrl, { autoConnect: true, reconnectionDelayMax: 3000 });
     socketRef.current = socket;
+
+    const emitSavedRejoin = (): boolean => {
+      const lastRoomId = window.localStorage.getItem(LS_LAST_ROOM);
+      const lastName = window.localStorage.getItem(LS_JOIN_NAME) || window.localStorage.getItem(LS_CREATE_NAME) || '';
+      const lastToken = lastRoomId ? window.localStorage.getItem(`${LS_RECONNECT_PREFIX}${lastRoomId}`) : null;
+      if (!lastRoomId || !lastName) return false;
+      socket.emit('room:join', { roomId: lastRoomId, playerName: lastName, reconnectToken: lastToken || undefined });
+      return true;
+    };
 
     socket.on('connect', () => {
       setConnStatus('connected');
       socket.emit('lobby:list');
 
       if (!attemptedRejoinRef.current) {
-        const lastRoomId = window.localStorage.getItem(LS_LAST_ROOM);
-        const lastName = window.localStorage.getItem(LS_JOIN_NAME) || window.localStorage.getItem(LS_CREATE_NAME) || '';
-        const lastToken = lastRoomId ? window.localStorage.getItem(`${LS_RECONNECT_PREFIX}${lastRoomId}`) : null;
-        if (lastRoomId && lastName) {
+        rejoinRetriesRef.current = 0;
+        if (emitSavedRejoin()) {
           attemptedRejoinRef.current = true;
-          socket.emit('room:join', { roomId: lastRoomId, playerName: lastName, reconnectToken: lastToken || undefined });
+          awaitingRejoinRef.current = true;
         }
       }
     });
+
+    // Phones suspend tabs in the background: when the page is visible again (or the network
+    // is back), reconnect right away instead of waiting for the next retry timer.
+    const wake = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (!socket.connected) socket.connect();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('pageshow', wake);
 
     socket.on('disconnect', () => {
       setConnStatus('disconnected');
@@ -268,6 +287,7 @@ export default function App() {
     });
 
     socket.on('room:joined', ({ roomId, youId: yid, reconnectToken, rejoined }: { roomId: string; youId: string; reconnectToken?: string; rejoined?: boolean }) => {
+      awaitingRejoinRef.current = false;
       setYouId(yid);
       youIdRef.current = yid;
       setView('room');
@@ -308,6 +328,15 @@ export default function App() {
 
     socket.on('error:msg', ({ message }: { message: string }) => {
       const msg = message || 'Eroare';
+      // The automatic rejoin was rate-limited: try again shortly instead of leaving the player outside.
+      if (awaitingRejoinRef.current && msg.includes('Prea rapid') && rejoinRetriesRef.current < 3) {
+        rejoinRetriesRef.current += 1;
+        window.setTimeout(() => {
+          if (socket.connected && awaitingRejoinRef.current) emitSavedRejoin();
+        }, 1000);
+        return;
+      }
+      awaitingRejoinRef.current = false;
       if (msg.includes('Room not found') || msg.includes('Game already started') || msg.includes('Room is full')) {
         window.localStorage.removeItem(LS_LAST_ROOM);
       }
@@ -328,6 +357,9 @@ export default function App() {
     });
 
     return () => {
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('pageshow', wake);
       socket.disconnect();
       socketRef.current = null;
     };

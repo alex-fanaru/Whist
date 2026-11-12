@@ -27,6 +27,8 @@ interface Room {
   nextHandTimer?: NodeJS.Timeout | null;
   trickPauseTimer?: NodeJS.Timeout | null;
   sortHandsTimer?: NodeJS.Timeout | null;
+  pauseTimer?: NodeJS.Timeout | null;
+  abandonTimer?: NodeJS.Timeout | null;
   pauseUntil?: number | null;
   password?: string | null;
   chat?: Array<{ id: string; name: string; text: string; ts: number; senderId: string }>;
@@ -170,6 +172,68 @@ function getPlayer(room: Room, pid: string): Player | undefined {
   return room.players.find(p => p.id === pid);
 }
 
+const RECONNECT_PAUSE_MS = 60_000;
+const ABANDONED_ROOM_MS = 10 * 60_000;
+
+function isPaused(room: Room): boolean {
+  return !!room.pauseUntil && Date.now() < room.pauseUntil;
+}
+
+// Seats the server plays for: bots, and humans who stayed offline past the reconnect window.
+function isAutopilot(p: Player | undefined): boolean {
+  return !!p && (p.isBot || !!p.offline);
+}
+
+function clearRoomTimers(room: Room): void {
+  for (const key of ['nextHandTimer', 'trickPauseTimer', 'sortHandsTimer', 'pauseTimer', 'abandonTimer'] as const) {
+    const t = room[key];
+    if (t) clearTimeout(t);
+    room[key] = null;
+  }
+}
+
+// Everything that was skipped while the room was paused (trick/hand timers, bot moves)
+// is re-armed here. Called when a player comes back and when the pause window runs out.
+function resumeRoom(room: Room): void {
+  if (!room.game) return;
+  if (isPaused(room)) return;
+  emitRoomUpdate(room);
+  sendStateToAll(room);
+  if (room.game.phase === 'trick_pause') scheduleResumeAfterTrick(room);
+  else if (room.game.phase === 'hand_end') scheduleAutoNextHand(room);
+  maybeBotAct(room);
+}
+
+function startReconnectPause(room: Room): void {
+  const until = Date.now() + RECONNECT_PAUSE_MS;
+  room.pauseUntil = Math.max(room.pauseUntil ?? 0, until);
+  if (room.pauseTimer) clearTimeout(room.pauseTimer);
+  room.pauseTimer = setTimeout(() => {
+    room.pauseTimer = null;
+    if (!rooms.has(room.id)) return;
+    room.pauseUntil = null;
+    // Whoever is still offline is now played automatically, so the table doesn't freeze.
+    resumeRoom(room);
+  }, Math.max(0, room.pauseUntil - Date.now()) + 50);
+}
+
+// A room with nobody online for a while is deleted instead of lingering in the lobby forever.
+function scheduleAbandonCheck(room: Room): void {
+  if (room.abandonTimer) {
+    clearTimeout(room.abandonTimer);
+    room.abandonTimer = null;
+  }
+  if (room.players.some(p => !p.isBot && !p.offline)) return;
+  room.abandonTimer = setTimeout(() => {
+    room.abandonTimer = null;
+    if (!rooms.has(room.id)) return;
+    if (room.players.some(p => !p.isBot && !p.offline)) return;
+    clearRoomTimers(room);
+    rooms.delete(room.id);
+    broadcastLobby();
+  }, ABANDONED_ROOM_MS);
+}
+
 function isHost(room: Room, pid: string): boolean {
   return room.hostId === pid;
 }
@@ -222,14 +286,20 @@ function sendStateToSocket(room: Room | undefined, socketId: string): void {
 function maybeBotAct(room: Room): void {
   if (!room.game) return;
   if (room.pauseUntil && Date.now() < room.pauseUntil) return;
+  // Don't play a whole game by autopilot for a room where every human is gone.
+  const hasHumans = room.players.some(p => !p.isBot);
+  if (hasHumans && !room.players.some(p => !p.isBot && !p.offline)) return;
   const game = room.game;
+  // Re-checked when the delayed move fires: the seat may have been reclaimed or the room paused meanwhile.
+  const stillAuto = (pid: string): boolean => !isPaused(room) && room.game === game && isAutopilot(getPlayer(room, pid));
 
   if (game.phase === 'bidding') {
     const pid = game.getCurrentBidder();
     const p = getPlayer(room, pid);
-    if (p && p.isBot) {
+    if (isAutopilot(p)) {
       setTimeout(() => {
         try {
+          if (!stillAuto(pid)) return;
           const handSize = game.currentHandSize;
           const hand = game.hands[pid];
           let est = hand.filter(c => c.rank >= 11).length;
@@ -256,9 +326,10 @@ function maybeBotAct(room: Room): void {
     const pid = game.getCurrentPlayer();
     if (!pid) return;
     const p = getPlayer(room, pid);
-    if (p && p.isBot) {
+    if (isAutopilot(p)) {
       setTimeout(() => {
         try {
+          if (!stillAuto(pid)) return;
           const hand = game.hands[pid];
           let choice: typeof hand[number] | null = null;
 
@@ -283,9 +354,10 @@ function maybeBotAct(room: Room): void {
   } else if (game.phase === 'choose_trump') {
     const pid = game.getCurrentBidder();
     const p = getPlayer(room, pid);
-    if (p && p.isBot) {
+    if (isAutopilot(p)) {
       setTimeout(() => {
         try {
+          if (!stillAuto(pid)) return;
           const hand = game.hands[pid];
           const counts: Record<string, number> = { S: 0, H: 0, D: 0, C: 0 };
           for (const c of hand) counts[c.suit] = (counts[c.suit] || 0) + 1;
@@ -317,6 +389,10 @@ function clearPauseIfAllOnline(room: Room): boolean {
   const anyOffline = room.players.some(p => !p.isBot && p.offline);
   if (!anyOffline) {
     room.pauseUntil = null;
+    if (room.pauseTimer) {
+      clearTimeout(room.pauseTimer);
+      room.pauseTimer = null;
+    }
     return true;
   }
   return false;
@@ -357,6 +433,7 @@ function closeRoom(room: Room): void {
       socketToRoom.delete(p.id);
     }
   }
+  clearRoomTimers(room);
   rooms.delete(room.id);
   io.to(room.id).emit('room:closed', { roomId: room.id });
   broadcastLobby();
@@ -434,7 +511,12 @@ io.on('connection', socket => {
 
   socket.on('room:join', ({ roomId, playerName, reconnectToken, password }: { roomId?: string; playerName?: string; reconnectToken?: string; password?: string }) => {
     try {
-      if (!canAct(socket, 'room:join', 800)) throw new Error('Prea rapid. Încearcă din nou.');
+      // Reconnects (known token) are limited per socket only: players on the same Wi-Fi share one IP
+      // and often reconnect at the same instant, so an IP limit silently dropped some of the rejoins.
+      const allowed = reconnectToken
+        ? rateLimit('room:join', Date.now(), lastActionBySocket, socket.id, 800)
+        : canAct(socket, 'room:join', 800);
+      if (!allowed) throw new Error('Prea rapid. Încearcă din nou.');
       const id = String(roomId || '').trim();
       const room = rooms.get(id);
       if (!room) throw new Error('Room not found');
@@ -444,9 +526,9 @@ io.on('connection', socket => {
         ? room.players.find(p => !p.isBot && p.reconnectToken === reconnectToken)
         : undefined;
 
-      // Fallback when the reconnect token was lost (common on mobile: the browser
-      // can drop localStorage on background reload, low memory, private tabs, etc).
-      // We only use it when it's unambiguous: exactly one offline human with that name.
+      // Fallback when the reconnect token was lost (common on mobile: the browser can drop
+      // localStorage on a background reload, low memory, private tabs...). Only used when
+      // unambiguous: exactly one offline human with that name.
       const offlineNameMatches = existingByToken
         ? []
         : room.players.filter(p => !p.isBot && p.offline && p.name.trim().toLowerCase() === pname.trim().toLowerCase());
@@ -469,6 +551,12 @@ io.on('connection', socket => {
         if (!existingOffline.reconnectToken) existingOffline.reconnectToken = reconnectToken || token();
         if (room.game && oldId && oldId !== socket.id) {
           room.game.replacePlayerId(oldId, socket.id);
+        }
+        // The old socket may still look alive to the server (network switch on mobile).
+        // Detach it so its late 'disconnect' can't touch this room.
+        if (oldId && oldId !== socket.id) {
+          socketToRoom.delete(oldId);
+          io.sockets.sockets.get(oldId)?.leave(id);
         }
         if (room.hostId === oldId) room.hostId = socket.id;
         if (room.playAgainVotes) {
@@ -497,10 +585,14 @@ io.on('connection', socket => {
       if (room.game) {
         sendStateToSocket(room, socket.id);
       }
-      if (clearPauseIfAllOnline(room)) {
-        emitRoomUpdate(room);
-        if (room.game) sendStateToAll(room);
+      // Someone is here again: cancel the "abandoned" countdown, lift the pause if nobody
+      // is offline anymore, and restart whatever stalled while the room was paused.
+      if (room.abandonTimer) {
+        clearTimeout(room.abandonTimer);
+        room.abandonTimer = null;
       }
+      clearPauseIfAllOnline(room);
+      resumeRoom(room);
       if (room.game?.phase === 'game_end') {
         maybeStartPlayAgain(room);
       }
@@ -531,13 +623,13 @@ io.on('connection', socket => {
     }
 
     if (room.game && room.game.phase !== 'game_end' && leaving && !leaving.isBot) {
-      const until = Date.now() + 60_000;
-      room.pauseUntil = Math.max(room.pauseUntil ?? 0, until);
+      startReconnectPause(room);
     }
 
     emitRoomUpdate(room);
     if (room.game?.phase === 'game_end') maybeStartPlayAgain(room);
     cleanupRoomIfEmpty(room);
+    if (rooms.has(room.id)) scheduleAbandonCheck(room);
   });
 
   socket.on('room:addBot', () => {
@@ -737,6 +829,7 @@ io.on('connection', socket => {
   });
 
   socket.on('disconnect', () => {
+    lastActionBySocket.delete(socket.id);
     const roomId = socketToRoom.get(socket.id);
     if (!roomId) return;
     const room = rooms.get(roomId);
@@ -744,21 +837,24 @@ io.on('connection', socket => {
     if (!room) return;
 
     const p = room.players.find(x => x.id === socket.id);
-    if (p) p.offline = true;
+    // Stale socket: this player already came back on a new socket (typical on mobile when
+    // the network switches). Nothing is offline, so don't mark anyone or start a pause.
+    if (!p || p.isBot) return;
+    p.offline = true;
     if (room.playAgainVotes) room.playAgainVotes.delete(socket.id);
 
     const onlineHumans = room.players.filter(x => !x.isBot && !x.offline);
     if (room.hostId === socket.id && onlineHumans.length) {
       room.hostId = onlineHumans[0].id;
     }
+    // keep game state; allow reconnect within the pause window
     if (room.game && room.game.phase !== 'game_end') {
-      const until = Date.now() + 60_000;
-      room.pauseUntil = Math.max(room.pauseUntil ?? 0, until);
+      startReconnectPause(room);
     }
-    // keep game state; allow reconnect within pause window
     emitRoomUpdate(room);
     if (room.game?.phase === 'game_end') maybeStartPlayAgain(room);
     cleanupRoomIfEmpty(room);
+    if (rooms.has(room.id)) scheduleAbandonCheck(room);
   });
 });
 

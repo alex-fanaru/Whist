@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 type Player = {
@@ -171,6 +172,41 @@ function CardFace({ cardStr, disabled, onClick }: { cardStr: string; disabled?: 
 
 function CardBack({ disabled }: { disabled?: boolean }) {
   return <div className={`cardBtn back${disabled ? ' disabled' : ''}`} />;
+}
+
+// Text that keeps its box size: if it doesn't fit, it slides back and forth instead of
+// stretching or wrapping the layout. Short text renders exactly like plain text.
+function MarqueeText({ text }: { text: string }) {
+  const boxRef = useRef<HTMLSpanElement | null>(null);
+  const innerRef = useRef<HTMLSpanElement | null>(null);
+  const [shift, setShift] = useState(0);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    const inner = innerRef.current;
+    if (!box || !inner) return;
+    // offsetWidth/clientWidth are layout sizes, so they ignore the seat's scale() highlight.
+    const measure = () => {
+      const overflow = inner.offsetWidth - box.clientWidth;
+      setShift(overflow > 1 ? Math.ceil(overflow) : 0);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [text]);
+
+  const style = shift
+    ? ({ '--marquee-shift': `${shift}px`, '--marquee-dur': `${Math.max(3.5, 2.5 + shift / 20)}s` } as CSSProperties)
+    : undefined;
+
+  return (
+    <span ref={boxRef} className="marquee" title={text}>
+      <span ref={innerRef} className={`marqueeInner${shift ? ' scrolling' : ''}`} style={style}>{text}</span>
+    </span>
+  );
 }
 
 export default function App() {
@@ -509,7 +545,7 @@ export default function App() {
       const who = room?.players.find(p => p.id === t.pid)?.name || t.pid;
       return (
         <div className="trickCard" key={`${t.pid}-${t.card}`}>
-          <div className="who">{who}</div>
+          <div className="who"><MarqueeText text={who} /></div>
           <CardFace cardStr={t.card} disabled />
         </div>
       );
@@ -541,7 +577,7 @@ export default function App() {
         <div className={seatClass} key={pid}>
           <div className="nameRow">
             <div className="name">
-              {name}
+              <MarqueeText text={name} />
               {pid === state.dealerId && <span className="badge">D</span>}
               {pid === state.currentPlayerId && <span className="badge">▶</span>}
               {pid === state.currentBidderId && <span className="badge">BID</span>}
@@ -617,11 +653,11 @@ export default function App() {
           <div className="sideRow"><span className="lbl">Fază</span><span className="pill">{state.phase}</span></div>
           <div className="sideRow"><span className="lbl">Joc</span><span className="pill">{`${state.handIndex}/${state.totalHands} • ${state.cardsPerPlayer} cărți`}</span></div>
           <div className="sideRow"><span className="lbl">Atu</span><span className="pill trumpBig" id="trumpPill"><span className="trumpLabel">ATU</span><span className={`trumpSuit ${isRedSuit(state.trumpSuit) ? 'red' : 'black'}`}>{suitName(state.trumpSuit)}</span></span></div>
-          <div className="sideRow"><span className="lbl">Rând</span><span className="pill">{
+          <div className="sideRow"><span className="lbl">Rând</span><span className="pill turnPill"><MarqueeText text={
             (state.phase === 'bidding' || state.phase === 'choose_trump')
               ? (room.players.find(p => p.id === state.currentBidderId)?.name || '—')
               : (room.players.find(p => p.id === state.currentPlayerId)?.name || '—')
-          }</span></div>
+          } /></span></div>
         </div>
 
         <div className="sideBox">
@@ -634,7 +670,7 @@ export default function App() {
               const won = (typeof state.tricksWon[pid] === 'number') ? state.tricksWon[pid] : 0;
               return (
                 <div className="listItem" key={`bid-${pid}`}>
-                  <span className="name">{p?.name || pid}</span>
+                  <span className="name"><MarqueeText text={p?.name || pid} /></span>
                   <span className="meta">{`bid ${bid} • won ${won}`}</span>
                 </div>
               );
@@ -719,11 +755,11 @@ export default function App() {
                   : <span className="streakBadge streakMinus">{'🧊'.repeat(Math.min(5, st.count))} -{st.count}</span>;
               return (
                 <div className="listItem" key={`score-${pid}`}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span className="name">{p?.name || pid}</span>
+                  <div className="scoreInfo" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="name"><MarqueeText text={p?.name || pid} /></span>
                     <span className="meta">{badge}</span>
                   </div>
-                  <div style={{ fontWeight: 900, fontSize: '16px' }}>{score}</div>
+                  <div style={{ fontWeight: 900, fontSize: '16px', flexShrink: 0 }}>{score}</div>
                 </div>
               );
             })}
@@ -1149,7 +1185,7 @@ export default function App() {
                       return (
                         <div className={`winRow place${idx + 1}`} key={`win-${lb.pid}`}>
                           <span className="place">{ordinal(idx + 1)}</span>
-                          <span className="winnerName">{name}</span>
+                          <span className="winnerName"><MarqueeText text={name} /></span>
                           <span className="winnerScore">{lb.score}</span>
                         </div>
                       );

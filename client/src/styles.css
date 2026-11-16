@@ -172,6 +172,30 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .centerTitle{color:var(--muted);font-size:13px;margin-bottom:8px}
 
+/* Names that don't fit slide back and forth instead of stretching the layout */
+.marquee{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+  white-space:nowrap;
+}
+.marqueeInner{
+  display:inline-block;
+  white-space:nowrap;
+}
+.marqueeInner.scrolling{
+  will-change:transform;
+  animation:marqueeSlide var(--marquee-dur, 6s) ease-in-out infinite alternate;
+}
+@keyframes marqueeSlide{
+  0%, 18%{ transform:translateX(0); }
+  82%, 100%{ transform:translateX(calc(-1 * var(--marquee-shift, 0px))); }
+}
+@media (prefers-reduced-motion: reduce){
+  .marqueeInner.scrolling{ animation:none; }
+}
+
 /* Seats */
 .seat{
   position:absolute;
@@ -210,8 +234,20 @@ button:disabled{opacity:.5;cursor:not-allowed}
   --seat-scale: 1.15;
 }
 .seat .nameRow{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.seat .name{font-weight:700;font-size:14px}
+/* The name is a fixed-width column (38% of the row), so the stats next to it always get the
+   same room and every seat keeps the same size whatever the name is. A name that doesn't
+   fit in the column scrolls inside it. */
+.seat .name{
+  display:flex;
+  align-items:center;
+  flex:0 0 38%;
+  min-width:0;
+  max-width:38%;
+  font-weight:700;
+  font-size:14px;
+}
 .seat .name .badge{
+  flex:0 0 auto;
   display:inline-flex;
   align-items:center;
   justify-content:center;
@@ -230,10 +266,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
   background:rgba(148,163,184,.9);
   box-shadow: 0 0 0 1px rgba(148,163,184,.45), 0 6px 14px rgba(148,163,184,.25);
 }
+/* Your own seat is wider and carries more badges, so its name gets a bit more room */
+.seat.me .name{flex-basis:46%;max-width:46%}
 .seat.offline{
   opacity:.75;
 }
-.seat .meta{color:var(--muted);font-size:12px}
+.seat .meta{color:var(--muted);font-size:12px;flex:1 1 0;min-width:0}
 .seat .handRow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .seat.me .handRow{
   display:grid;
@@ -328,7 +366,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   align-items:center;
   gap:6px;
 }
-.trickCard .who{color:var(--muted);font-size:12px}
+.trickCard .who{color:var(--muted);font-size:12px;max-width:64px}
 .trick .cardBtn.disabled{opacity:1}
 
 /* Action/footer */
@@ -416,7 +454,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .winRow.place2{box-shadow: inset 0 0 0 1px rgba(148,163,184,.4)}
 .winRow.place3{box-shadow: inset 0 0 0 1px rgba(234,88,12,.4)}
 .place{font-weight:800;min-width:60px;text-align:left}
-.winnerName{font-weight:700}
+.winnerName{font-weight:700;min-width:0;max-width:55%}
 .winnerScore{font-weight:900}
 .winHint{color:var(--muted);font-size:13px}
 .winActions{
@@ -700,8 +738,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
   background: rgba(255,255,255,.04);
   border:1px solid rgba(255,255,255,.06);
 }
-.listItem .name{ font-weight:700; }
-.listItem .meta{ color: var(--muted); font-size:12px; }
+.listItem .name{ font-weight:700; flex:1 1 auto; min-width:0; }
+.listItem .meta{ color: var(--muted); font-size:12px; flex:0 0 auto; white-space:nowrap; }
+.listItem .scoreInfo{ flex:1 1 auto; min-width:0; }
+.sideRow .turnPill{ flex:0 1 auto; min-width:0; }
 
 .trumpBig{
   font-weight:900;

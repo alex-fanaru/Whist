@@ -796,7 +796,7 @@ export default function App() {
         <div className="sideBox scoreWrap">
           <div className="scoreHeader">
             <div className="sideTitle">🏆 Scoreboard</div>
-            <button className="chatToggle" onClick={() => setHistoryOpen(true)} aria-label="History" title="History">📜</button>
+            <button className="chatToggle" onClick={() => setHistoryOpen(v => !v)} aria-label="History" title="History">📜</button>
             <button
               className="chatToggle"
               disabled={!canChat}
@@ -1236,7 +1236,7 @@ export default function App() {
                         return [...all].reverse().map(h => (
                           <details className="histHand" key={`h${h.handNo}`} open={h === all[all.length - 1]}>
                             <summary>
-                              <b>Hand {h.handNo}</b>{h === liveHand ? ' (in progress)' : ''} · {h.cards} cards · ATU <span className={isRedSuit(h.trump) ? 'red' : ''}>{suitName(h.trump)}</span>
+                              <span className="histTitle">Hand {h.handNo}</span>{h === liveHand && <span className="histLive">LIVE</span>}<span className="histChip">{h.cards} cards</span><span className={`histChip histTrump${isRedSuit(h.trump) ? ' red' : ''}`}>ATU {suitName(h.trump)}</span>
                             </summary>
                             <table className="histTable">
                               <thead><tr><th>Player</th><th>Bid</th><th>Won</th><th>Pts</th></tr></thead>
@@ -1332,22 +1332,9 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    <div className="chatMobileRow">
-                      <button
-                        className="chatToggleMobile"
-                        disabled={!canChat}
-                        onClick={() => {
-                          setChatOpen(true);
-                          setUnreadChat(0);
-                        }}
-                      >
-                        Chat
-                        {hasUnread && <span className="chatBadge">{unreadChat}</span>}
-                      </button>
-                    </div>
                 </div>
                     <div className="chatMobileRow">
-                      <button className="chatToggleMobile" onClick={() => setHistoryOpen(true)}>History</button>
+                      <button className="chatToggleMobile" onClick={() => setHistoryOpen(v => !v)}>History</button>
                       <button
                         className="chatToggleMobile"
                         disabled={!canChat}

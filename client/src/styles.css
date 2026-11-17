@@ -540,7 +540,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .chatMobileRow{
   display:none;
   margin-top:8px;
+<<<<<<< HEAD
   gap:8px;
+=======
+>>>>>>> 651169de5b15cbb21872c11efd12e62d8dfaded3
   justify-content:flex-end;
 }
 .chatToggleMobile{
@@ -1107,6 +1110,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* very small phones (320px): slightly smaller cards so 8 of them still leave a tappable strip each */
 @media (max-width: 340px){
   .table .seat.me .handRow{ --cw:40px; }
+<<<<<<< HEAD
 }
 
 /* ---- Center banner (trump chosen / trick won), shown 2.5s ---- */
@@ -1140,3 +1144,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .histPlay.red{color:#ff6b6b}
 .histWinner{color:var(--muted)}
 @media (max-width:980px){ .bannerCardImg .cardBtn,.bannerCardImg{width:64px} .bannerSuit{font-size:34px} }
+=======
+}
+>>>>>>> 651169de5b15cbb21872c11efd12e62d8dfaded3

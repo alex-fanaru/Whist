@@ -1188,3 +1188,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .bannerSuit{font-size:40px;padding:6px 14px}
 }
 @media (max-width:980px){ .bannerOverlay{padding-bottom:70px} }
+
+/* Chat: twice as tall on desktop only (phones keep the full-screen chat) */
+@media (min-width:981px){ .chatPanel{ height:600px; } }

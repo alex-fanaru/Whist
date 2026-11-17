@@ -540,10 +540,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .chatMobileRow{
   display:none;
   margin-top:8px;
-<<<<<<< HEAD
-  gap:8px;
-=======
->>>>>>> 651169de5b15cbb21872c11efd12e62d8dfaded3
   justify-content:flex-end;
 }
 .chatToggleMobile{
@@ -1110,40 +1106,4 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* very small phones (320px): slightly smaller cards so 8 of them still leave a tappable strip each */
 @media (max-width: 340px){
   .table .seat.me .handRow{ --cw:40px; }
-<<<<<<< HEAD
 }
-
-/* ---- Center banner (trump chosen / trick won), shown 2.5s ---- */
-.bannerOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:9;
-  animation:bannerLife 2.5s ease both}
-.bannerCard{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 18px;border-radius:16px;
-  border:1px solid rgba(255,255,255,.2);background:rgba(10,16,30,.88);box-shadow:0 12px 30px rgba(0,0,0,.45);text-align:center;max-width:80%}
-.bannerTitle{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:800}
-.bannerText{font-weight:800;font-size:15px}
-.bannerSuit{font-size:44px;line-height:1;background:#fff;border-radius:12px;padding:4px 14px}
-.bannerSuit.red{color:#d11}.bannerSuit.black{color:#111}
-.bannerCardImg .cardBtn,.bannerCardImg{width:84px}
-@keyframes bannerLife{0%{opacity:0;transform:scale(.85)}10%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0}}
-
-/* ---- History modal ---- */
-.historyBackdrop{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}
-.historyModal{width:min(640px,100%);max-height:85vh;overflow:auto;background:rgba(12,18,34,.98);border:1px solid rgba(255,255,255,.14);
-  border-radius:14px;padding:12px 14px;box-shadow:0 16px 40px rgba(0,0,0,.5)}
-.historyHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.histHand{border-top:1px solid rgba(255,255,255,.1);padding:8px 0}
-.histHand summary{cursor:pointer}
-.histHand .red{color:#ff6b6b}
-.histTable{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
-.histTable th,.histTable td{text-align:left;padding:3px 6px}
-.histTable td:nth-child(n+2),.histTable th:nth-child(n+2){text-align:center;width:48px}
-.histTable tr.ok td:last-child{color:#5fd38a}.histTable tr.bad td:last-child{color:#ff8a8a}
-.histTricks{display:flex;flex-direction:column;gap:4px;font-size:12px}
-.histTrick{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
-.histNo{color:var(--muted);width:18px}
-.histPlay.win{font-weight:800;text-decoration:underline}
-.histPlay.red{color:#ff6b6b}
-.histWinner{color:var(--muted)}
-@media (max-width:980px){ .bannerCardImg .cardBtn,.bannerCardImg{width:64px} .bannerSuit{font-size:34px} }
-=======
-}
->>>>>>> 651169de5b15cbb21872c11efd12e62d8dfaded3

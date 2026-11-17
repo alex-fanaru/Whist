@@ -46,7 +46,21 @@ type Streak = {
   count: number;
 };
 
+type TrickLog = { seq: number; handNo: number; plays: { pid: string; card: string }[]; winner: string; winCard: string };
+type HandLog = {
+  handNo: number;
+  cards: number;
+  trump: Suit | null;
+  bids: Record<string, number>;
+  won: Record<string, number>;
+  delta: Record<string, number>; // score change this hand (incl. streak bonus)
+  tricks: TrickLog[];
+};
+
 type PublicState = {
+  lastTrick: TrickLog | null;
+  history: HandLog[];
+  currentTricks: TrickLog[];
   phase: Phase;
   playerIds: string[];
   dealerId: string;
@@ -130,6 +144,10 @@ class WhistGame {
   bids: Record<string, number | null>;
   tricksWon: Record<string, number>;
   currentTrick: TrickEntry[];
+  trickSeq = 0;
+  lastTrick: TrickLog | null = null;
+  curTricks: TrickLog[] = [];
+  handLog: HandLog[] = [];
   leadSuit: Suit | null;
   pendingPlayTurnIndex: number | null;
   bidTurnIndex: number;
@@ -204,6 +222,7 @@ class WhistGame {
     this.bids = {}; // pid => number|null
     this.tricksWon = {}; // pid => number
     this.currentTrick = []; // [{pid, card}]
+    this.curTricks = [];
     this.leadSuit = null;
     this.pendingPlayTurnIndex = null;
 
@@ -228,7 +247,7 @@ class WhistGame {
     // Deal `handSize` cards each, starting from left of dealer
     const startIndex = (this.dealerIndex + 1) % this.numPlayers;
     this.dealStartIndex = startIndex;
-    const initialDeal = handSize === 8 ? 5 : handSize;
+    const initialDeal = handSize;
     for (let i = 0; i < initialDeal; i++) {
       for (let p = 0; p < this.numPlayers; p++) {
         const pid = this.playerIds[(startIndex + p) % this.numPlayers];
@@ -237,10 +256,8 @@ class WhistGame {
       }
     }
 
-    if (handSize === 8) {
-      this.deck = deck;
-    } else {
-      this.deck = null;
+    this.deck = null;
+    if (handSize !== 8) {
       this.sortHands();
     }
 
@@ -296,17 +313,6 @@ class WhistGame {
     if (pid !== this.getCurrentBidder()) throw new Error('Not your turn to choose trump');
     if (!SUITS.includes(suit)) throw new Error('Invalid trump suit');
     this.trumpSuit = suit;
-    if (this.currentHandSize === 8 && this.deck) {
-      // Deal the remaining 3 cards after trump is chosen
-      for (let i = 0; i < 3; i++) {
-        for (let p = 0; p < this.numPlayers; p++) {
-          const pid2 = this.playerIds[(this.dealStartIndex + p) % this.numPlayers];
-          const card = this.deck.pop();
-          if (card) this.hands[pid2].push(card);
-        }
-      }
-      this.deck = null;
-    }
     this.phase = 'bidding';
     return this.getPublicState();
   }
@@ -371,10 +377,35 @@ class WhistGame {
       }
     }
     this.tricksWon[winner] += 1;
+    const log: TrickLog = {
+      seq: ++this.trickSeq,
+      handNo: this.handIndex + 1,
+      plays: this.currentTrick.map(t => ({ pid: t.pid, card: cardToString(t.card) })),
+      winner,
+      winCard: cardToString(bestCard),
+    };
+    this.curTricks.push(log);
+    this.lastTrick = log;
 
     const handOver = this.playerIds.every(p => this.hands[p].length === 0);
     if (handOver) {
+      const before = { ...this.totalScores };
       this._scoreHand();
+      const delta: Record<string, number> = {};
+      const bidsSnap: Record<string, number> = {};
+      for (const pid of this.playerIds) {
+        delta[pid] = this.totalScores[pid] - (before[pid] ?? 0);
+        bidsSnap[pid] = this.bids[pid] ?? 0;
+      }
+      this.handLog.push({
+        handNo: this.handIndex + 1,
+        cards: this.currentHandSize,
+        trump: this.trumpSuit,
+        bids: bidsSnap,
+        won: { ...this.tricksWon },
+        delta,
+        tricks: this.curTricks,
+      });
       const isLast = this.handIndex >= this.schedule.length - 1;
       this.phase = isLast ? 'game_end' : 'hand_end';
       // Keep the last trick visible during hand_end/game_end.
@@ -505,9 +536,12 @@ class WhistGame {
       totalScores: { ...this.totalScores },
       streaks: { ...this.streaks },
       leaderboard: this.getLeaderboard(),
+      lastTrick: this.lastTrick,
+      history: this.handLog,
+      currentTricks: this.curTricks,
     };
   }
 }
 
 export { WhistGame, cardToString, stringToCard, SUITS };
-export type { Suit, Card, Phase, TrickEntry, Streak, PublicState };
+export type { TrickLog, HandLog, Suit, Card, Phase, TrickEntry, Streak, PublicState };

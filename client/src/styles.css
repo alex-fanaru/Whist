@@ -483,6 +483,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .winnerName{font-weight:700;min-width:0;max-width:55%}
 .winnerScore{font-weight:900}
 .winHint{color:var(--muted);font-size:13px}
+.winActions{
+  margin-top:12px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:center;
+}
 
 /* Fireworks */
 .fireworks{
@@ -529,6 +536,19 @@ button:disabled{opacity:.5;cursor:not-allowed}
   border:1px solid rgba(255,255,255,.18);
   background:rgba(12,18,34,.9);
   color:var(--text);
+}
+.chatMobileRow{
+  display:none;
+  margin-top:8px;
+  gap:8px;
+  justify-content:flex-end;
+}
+.chatToggleMobile{
+  position:relative;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(10,16,30,.65);
+  border-radius:10px;
+  padding:6px 10px;
 }
 .chatBadge{
   position:absolute;
@@ -813,6 +833,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
 /* Responsive */
 @media (max-width: 980px){
+  .container{padding:10px}
+  .gameShell{margin-top:6px}
+  .tableWrap{margin:8px 0 4px; justify-content:stretch}
+  .centerPanel{width:100%}
+  .card{padding:10px}
   .gameShell{
     display:flex;
     flex-direction:column;
@@ -825,53 +850,55 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .gameShell{ align-items:stretch; }   /* panels take the screen width instead of growing to their widest content */
   .table{ height: 420px; }
   .seat{
-    width:170px;
-    max-width:34%;
+    width:140px;
+    max-width:30%;
     padding:6px;
     border-radius:12px;
   }
   .seat.me{
-    width:230px;
-    max-width:48%;
+    width:200px;
+    max-width:46%;
   }
   .seat .name{font-size:12px}
-  .seat .meta{font-size:11px}
-  .seat .name .badge{height:16px;font-size:10px;padding:0 5px}
+  .seat .meta{display:none}
+  .seat .name .badge{height:14px;font-size:10px;padding:0 4px}
   .seat .handRow{gap:4px}
   .seat.me .handRow{
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap:4px;
   }
   .seat.me .cardBtn{
-    min-width:44px;
-    height:64px;
+    min-width:40px;
+    height:58px;
   }
   .seat:not(.me) .cardBtn{
-    min-width:18px;
-    height:34px;
+    min-width:16px;
+    height:30px;
     flex:0 0 calc(16% - 3px);
     max-width:calc(16% - 3px);
   }
-  /* Re-space side seats to avoid overlap on shorter table */
-  .seat.pos1{right:10px;top:86px}
-  .seat.pos2{right:10px;bottom:86px}
-  .seat.pos4{left:10px;bottom:86px}
-  .seat.pos5{left:10px;top:86px}
+  /* Re-space side seats to avoid overlap and move toward center */
+  .seat.pos1{right:28px;top:120px}
+  .seat.pos2{right:28px;bottom:120px}
+  .seat.pos4{left:28px;bottom:120px}
+  .seat.pos5{left:28px;top:120px}
+  /* Allow top/bottom seats to grow outward */
+  .seat.pos0{top:auto; bottom: calc(100% - 140px);}
+  .seat.pos3{bottom:auto; top: calc(100% - 140px);}
   .chatPanel{
     position:fixed;
-    left:8px;
-    right:8px;
-    bottom:8px;
-    top:auto;
+    inset:0;
     width:auto;
-    height:45vh;
+    height:auto;
     max-width:none;
+    border-radius:0;
     z-index:12;
   }
   .chatFab{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
+    display:none;
+  }
+  .chatMobileRow{
+    display:flex;
   }
   .winCard{padding:14px}
 }
@@ -1081,3 +1108,35 @@ button:disabled{opacity:.5;cursor:not-allowed}
 @media (max-width: 340px){
   .table .seat.me .handRow{ --cw:40px; }
 }
+
+/* ---- Center banner (trump chosen / trick won), shown 2.5s ---- */
+.bannerOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:9;
+  animation:bannerLife 2.5s ease both}
+.bannerCard{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 18px;border-radius:16px;
+  border:1px solid rgba(255,255,255,.2);background:rgba(10,16,30,.88);box-shadow:0 12px 30px rgba(0,0,0,.45);text-align:center;max-width:80%}
+.bannerTitle{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.bannerText{font-weight:800;font-size:15px}
+.bannerSuit{font-size:44px;line-height:1;background:#fff;border-radius:12px;padding:4px 14px}
+.bannerSuit.red{color:#d11}.bannerSuit.black{color:#111}
+.bannerCardImg .cardBtn,.bannerCardImg{width:84px}
+@keyframes bannerLife{0%{opacity:0;transform:scale(.85)}10%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0}}
+
+/* ---- History modal ---- */
+.historyBackdrop{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}
+.historyModal{width:min(640px,100%);max-height:85vh;overflow:auto;background:rgba(12,18,34,.98);border:1px solid rgba(255,255,255,.14);
+  border-radius:14px;padding:12px 14px;box-shadow:0 16px 40px rgba(0,0,0,.5)}
+.historyHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.histHand{border-top:1px solid rgba(255,255,255,.1);padding:8px 0}
+.histHand summary{cursor:pointer}
+.histHand .red{color:#ff6b6b}
+.histTable{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+.histTable th,.histTable td{text-align:left;padding:3px 6px}
+.histTable td:nth-child(n+2),.histTable th:nth-child(n+2){text-align:center;width:48px}
+.histTable tr.ok td:last-child{color:#5fd38a}.histTable tr.bad td:last-child{color:#ff8a8a}
+.histTricks{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.histTrick{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.histNo{color:var(--muted);width:18px}
+.histPlay.win{font-weight:800;text-decoration:underline}
+.histPlay.red{color:#ff6b6b}
+.histWinner{color:var(--muted)}
+@media (max-width:980px){ .bannerCardImg .cardBtn,.bannerCardImg{width:64px} .bannerSuit{font-size:34px} }

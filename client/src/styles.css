@@ -353,6 +353,32 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .cardBtn.black{color:#e7eefc}
 .seat.me .cardBtn.disabled{opacity:1}
 
+/* Taps on cards: no 300ms double-tap-zoom delay and no grey flash on iOS/Android */
+.cardBtn{
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  transition:transform .12s ease, filter .12s ease;
+}
+/* A card lifted by the first tap (phones); the second tap plays it */
+.seat.me .cardBtn.lifted{
+  position:relative;
+  z-index:3;
+  transform:translateY(-12px);
+  filter:drop-shadow(0 8px 10px rgba(0,0,0,.55));
+}
+/* Opponent card count (only shown in the compact layout, see the end of this file) */
+.cardCount{display:none}
+.miniBack{
+  display:inline-block;
+  width:11px;
+  height:15px;
+  border-radius:2px;
+  border:1px solid rgba(255,255,255,.28);
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.22) 0 3px, rgba(0,0,0,.18) 3px 6px),
+    linear-gradient(180deg, rgba(120,0,0,.9), rgba(50,0,0,.9));
+}
+
 .trick{
   display:flex;
   flex-wrap:nowrap;
@@ -523,10 +549,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .chatPanel{
   position:absolute;
-  left:0;
+  /* Anchored to the right edge of the scoreboard and growing toward the table: the scoreboard
+     column is 260px wide + 12px gap to the table, so 360px meets the table and overlaps it by ~88px */
+  left:auto;
   right:0;
   top:calc(100% + 8px);
-  width:auto;
+  width:360px;
+  max-width:calc(100vw - 24px);
   height:300px;
   background:rgba(12,18,34,.95);
   border:1px solid rgba(255,255,255,.12);
@@ -681,6 +710,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
   position:sticky;
   top:12px;
 }
+/* The scoreboard column (and the chat that opens from it) must paint above the table seats */
+.gameShell .sidePanel.right{ z-index:7; }
 .sideBox{
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
   border:1px solid var(--border);
@@ -791,6 +822,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .sidePanel.left{ order:2; }
   .sidePanel.right{ order:3; }
   .sidePanel{ position:static; }
+  .gameShell{ align-items:stretch; }   /* panels take the screen width instead of growing to their widest content */
   .table{ height: 420px; }
   .seat{
     width:170px;
@@ -887,4 +919,165 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .trickCard{ min-width:40px; height:56px; }
   .bidButtons{ flex-wrap:wrap; }
   .actionRow{ padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+
+/* ===== Compact table (phones and tablets) =====
+   Seats used to float around a fixed-height oval, which collides as soon as the screen is small.
+   Here the table is an ordinary flowing layout, top to bottom:
+     1. opponents  - small chips with name, bid/won and how many cards they hold (no card backs)
+     2. the trick  - one row of cards
+     3. you        - your stats and your whole hand as one overlapping fan
+   Nothing is positioned absolutely or scaled, so nothing can overlap. */
+@media (max-width: 980px){
+  .table{
+    --tcw: clamp(44px, 14vw, 80px);      /* trick card width */
+    height:auto;
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    align-content:flex-start;
+    gap:8px;
+    padding:10px;
+  }
+  /* the big gold oval would cut through the content: keep it as a thin inner rail instead */
+  .table.felt::before{ inset:5px; border-radius:22px; }
+
+  .table .seat{
+    position:static;
+    transform:none;           /* no scale(1.15) for the active seat, no sticky :hover lift */
+    width:auto;
+    max-width:none;
+    padding:6px 8px;
+    border-radius:12px;
+  }
+
+  /* 1. opponents */
+  .table .seat:not(.me){
+    order:1;
+    flex:1 1 calc(33.333% - 8px);   /* three per row; a short last row centres */
+    max-width:calc(50% - 4px);
+    min-width:0;
+  }
+  .table .seat:not(.me) .handRow{ display:none; }
+  .table .seat:not(.me) .nameRow{
+    flex-direction:column;
+    align-items:stretch;
+    gap:3px;
+  }
+  .table .seat:not(.me) .name{
+    flex:0 0 auto;
+    max-width:100%;
+    font-size:12px;
+  }
+  .table .seat:not(.me) .meta{
+    flex:0 0 auto;
+    font-size:10.5px;
+    line-height:1.3;
+  }
+  /* score and streak are already in the scoreboard below: keep chips to bid / won */
+  .table .seat:not(.me) .mScore,
+  .table .seat:not(.me) .mSepScore,
+  .table .seat:not(.me) .mSepStreak,
+  .table .seat:not(.me) .mStreak{ display:none; }
+  .cardCount{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    font-size:11px;
+    font-weight:800;
+    color:var(--muted);
+  }
+
+  /* 2. the trick */
+  .table .tableCenter{
+    position:static;
+    transform:none;
+    order:2;
+    flex:1 1 100%;
+    width:auto;
+    max-width:none;
+    padding:8px;
+    border-radius:14px;
+  }
+  .table .trick{
+    width:auto;
+    max-width:none;
+    padding:0;
+    gap:6px;
+    /* reserve the height of a card so the hand below doesn't jump when the first card lands */
+    min-height:calc(var(--tcw) * 1.4577 + 22px);
+  }
+  .table .trickCard{
+    flex:1 1 0;
+    min-width:0;
+    max-width:var(--tcw);
+    height:auto;
+    gap:4px;
+  }
+  .table .trickCard .who{
+    /* width:0 + min-width:100% = fills the card but adds nothing to the table's minimum width
+       (otherwise six long names made the table wider than the screen) */
+    width:0;
+    min-width:100%;
+    font-size:11px;
+  }
+  .table .trickCard .cardBtn{
+    width:100%;
+    min-width:0;
+    height:auto;
+    aspect-ratio:500 / 726;
+  }
+
+  /* 3. you */
+  .table .seat.me{
+    order:3;
+    flex:1 1 100%;
+    padding:6px 8px 8px;
+  }
+  .table .seat.me .nameRow{ flex-wrap:wrap; }
+  .table .seat.me .name{
+    flex:0 1 auto;
+    max-width:100%;
+    font-size:13px;
+  }
+  .table .seat.me .meta{
+    font-size:11px;
+    text-align:right;
+  }
+  .table .seat.me .handRow{
+    --cw: clamp(46px, 15vw, 84px);   /* card width in the fan */
+    display:flex;
+    flex-wrap:nowrap;
+    justify-content:center;
+    gap:0;
+    margin-top:4px;
+    padding-top:14px;                /* room for a lifted card */
+  }
+  .table .seat.me .cardBtn{
+    flex:0 0 auto;
+    width:var(--cw);
+    min-width:0;
+    max-width:none;
+    height:auto;
+    aspect-ratio:500 / 726;
+    filter:drop-shadow(-2px 0 3px rgba(0,0,0,.35));   /* so each card reads as sitting on the previous one */
+  }
+  .table .seat.me .cardBtn.back{ border-radius:6px; }
+  /* Overlap just enough for the whole hand to fit in one row. --n is the number of cards
+     (set from React); percentages in margins refer to the width of the hand row. If there is
+     room to spare the cards simply sit 6px apart. */
+  .table .seat.me .cardBtn + .cardBtn{
+    margin-left:min(6px, calc((100% - var(--cw)) / (var(--n) - 1) - var(--cw)));
+  }
+  .table .seat.me .cardBtn.lifted{
+    filter:drop-shadow(0 8px 10px rgba(0,0,0,.55));
+  }
+
+  /* The bid buttons only matter on your bidding turn; the rest of the time they were just
+     a row of greyed-out buttons taking ~170px of a phone screen. */
+  .bidArea.hidden{ display:none; }
+}
+/* very small phones (320px): slightly smaller cards so 8 of them still leave a tappable strip each */
+@media (max-width: 340px){
+  .table .seat.me .handRow{ --cw:40px; }
 }

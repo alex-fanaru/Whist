@@ -62,6 +62,8 @@ const LS_JOIN_NAME = 'whist.joinName';
 const LS_LAST_ROOM = 'whist.lastRoomId';
 const LS_RECONNECT_PREFIX = 'whist.reconnect.';
 const LS_MUTED = 'whist.muted';
+// Same breakpoint as the compact table layout in styles.css
+const NARROW_QUERY = '(max-width: 980px)';
 
 
 function suitName(s: string | null): string {
@@ -132,7 +134,7 @@ function cardToImageCandidates(cardStr: string): string[] {
   return candidates;
 }
 
-function CardFace({ cardStr, disabled, onClick }: { cardStr: string; disabled?: boolean; onClick?: () => void }) {
+function CardFace({ cardStr, disabled, lifted, onClick }: { cardStr: string; disabled?: boolean; lifted?: boolean; onClick?: () => void }) {
   const candidates = useMemo(() => cardToImageCandidates(cardStr), [cardStr]);
   const [idx, setIdx] = useState(0);
   const [fallback, setFallback] = useState(false);
@@ -145,7 +147,7 @@ function CardFace({ cardStr, disabled, onClick }: { cardStr: string; disabled?: 
   if (fallback || candidates.length === 0) {
     return (
       <div
-        className={`cardBtn ${isRedSuit(cardStr.slice(-1)) ? 'red' : 'black'}${disabled ? ' disabled' : ''}`}
+        className={`cardBtn ${isRedSuit(cardStr.slice(-1)) ? 'red' : 'black'}${disabled ? ' disabled' : ''}${lifted ? ' lifted' : ''}`}
         onClick={disabled ? undefined : onClick}
       >
         {cardLabel(cardStr)}
@@ -156,7 +158,7 @@ function CardFace({ cardStr, disabled, onClick }: { cardStr: string; disabled?: 
   const src = `/cards/${candidates[idx]}`;
 
   return (
-    <div className={`cardBtn${disabled ? ' disabled' : ''}`} onClick={disabled ? undefined : onClick}>
+    <div className={`cardBtn${disabled ? ' disabled' : ''}${lifted ? ' lifted' : ''}`} onClick={disabled ? undefined : onClick}>
       <img
         className="cardImg"
         src={src}
@@ -246,7 +248,13 @@ export default function App() {
   const youIdRef = useRef<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  const emojis = ['😀', '😅', '😂', '😍', '😎', '😭', '😡', '👍', '🙏', '🔥', '🎉', '🂡', '🐟'];
+  // On phones/tablets the hand is a one-row fan of overlapping cards, so a single tap would be
+  // too easy to mis-hit: the first tap lifts a card, a second tap on the same card plays it.
+  const [isNarrow, setIsNarrow] = useState<boolean>(() =>
+    typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(NARROW_QUERY).matches);
+  const [liftedCard, setLiftedCard] = useState<string | null>(null);
+
+  const emojis =['😀', '😅', '😂', '😍', '😎', '😭', '😡', '👍', '🙏', '🔥', '🎉', '🂡', '🐟'];
 
   const showToast = useCallback((message: string, ms = 2200) => {
     setToast({ message, visible: true });
@@ -406,6 +414,23 @@ export default function App() {
       setSelectedBidValue(null);
     }
   }, [state, youId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setIsNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // A lifted card is dropped as soon as it can't be played any more (not my turn, trick over, new hand).
+  useEffect(() => {
+    if (!liftedCard) return;
+    const myTurn = !!state && !!youId && state.phase === 'playing' && state.currentPlayerId === youId;
+    const stillInHand = !!youId && (handsByPlayer[youId] || []).includes(liftedCard);
+    if (!myTurn || !stillInHand) setLiftedCard(null);
+  }, [liftedCard, state, youId, handsByPlayer]);
 
   useEffect(() => {
     if (!state || state.phase !== 'game_end') {
@@ -568,10 +593,21 @@ export default function App() {
       const bid = (typeof state.bids?.[pid] === 'number') ? state.bids[pid] : '-';
       const won = state.tricksWon?.[pid] ?? 0;
       const st = state.streaks?.[pid];
-      const stTxt = (st && st.type && st.count) ? ` • Streak ${st.type}${st.count}` : '';
+      const streakTxt = (st && st.type && st.count) ? `Streak ${st.type}${st.count}` : '';
 
       const cards = handsByPlayer?.[pid] || [];
-      const canPlay = state.phase === 'playing' && pid === youId && state.currentPlayerId === youId;
+      const isMe = pid === youId;
+      const canPlay = state.phase === 'playing' && isMe && state.currentPlayerId === youId;
+
+      const playCard = (cs: string) => {
+        // Wide screens: one click plays. Narrow screens: tap lifts, second tap on the same card plays.
+        if (!isNarrow || liftedCard === cs) {
+          setLiftedCard(null);
+          socketRef.current?.emit('game:play', { card: cs });
+        } else {
+          setLiftedCard(cs);
+        }
+      };
 
       return (
         <div className={seatClass} key={pid}>
@@ -583,9 +619,23 @@ export default function App() {
               {pid === state.currentBidderId && <span className="badge">BID</span>}
               {isOffline && <span className="badge off">OFF</span>}
             </div>
-            <div className="meta">{`Scor ${score} • Bid ${bid} • Won ${won}${stTxt}`}</div>
+            <div className="meta">
+              <span className="mScore">{`Scor ${score}`}</span>
+              <span className="mSep mSepScore">{' • '}</span>
+              <span className="mBid">{`Bid ${bid}`}</span>
+              <span className="mSep">{' • '}</span>
+              <span className="mWon">{`Won ${won}`}</span>
+              {streakTxt && <span className="mSep mSepStreak">{' • '}</span>}
+              {streakTxt && <span className="mStreak">{streakTxt}</span>}
+            </div>
+            {!isMe && (
+              <div className="cardCount" title={`${cards.length} cărți`}>
+                <span className="miniBack" />
+                {`×${cards.length}`}
+              </div>
+            )}
           </div>
-          <div className="handRow">
+          <div className="handRow" style={{ '--n': cards.length } as CSSProperties}>
             {cards.map((cs, idx) => {
               if (cs === 'HIDDEN') {
                 return <CardBack disabled key={`hidden-${pid}-${idx}`} />;
@@ -595,7 +645,8 @@ export default function App() {
                   key={`${pid}-${cs}-${idx}`}
                   cardStr={cs}
                   disabled={!canPlay}
-                  onClick={!canPlay ? undefined : () => socketRef.current?.emit('game:play', { card: cs })}
+                  lifted={canPlay && liftedCard === cs}
+                  onClick={!canPlay ? undefined : () => playCard(cs)}
                 />
               );
             })}
@@ -1228,7 +1279,9 @@ export default function App() {
             )}
 
             <div className="notice small">
-              Click pe o carte din mâna ta ca s-o joci (doar când e rândul tău). Cartile sunt vizibile pentru toți.
+              {isNarrow
+                ? 'Atinge o carte ca s-o ridici, atinge-o încă o dată ca s-o joci (doar când e rândul tău).'
+                : 'Click pe o carte din mâna ta ca s-o joci (doar când e rândul tău). Cartile sunt vizibile pentru toți.'}
             </div>
           </div>
         </section>

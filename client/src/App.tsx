@@ -28,7 +28,22 @@ type Streak = {
   count: number;
 };
 
+type TrickLog = { seq: number; handNo: number; plays: { pid: string; card: string }[]; winner: string; winCard: string };
+type HandLog = {
+  handNo: number;
+  cards: number;
+  trump: 'S' | 'H' | 'D' | 'C' | null;
+  bids: Record<string, number>;
+  won: Record<string, number>;
+  delta: Record<string, number>;
+  tricks: TrickLog[];
+};
+type Banner = { key: string; title: string; text: string; card?: string; suit?: string | null };
+
 type PublicState = {
+  lastTrick?: TrickLog | null;
+  history?: HandLog[];
+  currentTricks?: TrickLog[];
   phase: string;
   playerIds: string[];
   dealerId: string;
@@ -221,6 +236,10 @@ export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [room, setRoom] = useState<Room | null>(null);
   const [state, setState] = useState<PublicState | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const bannerSeenRef = useRef<{ trick: number | null; trump: string }>({ trick: null, trump: '' });
+  const prevStateRef = useRef<PublicState | null>(null);
   const [handsByPlayer, setHandsByPlayer] = useState<HandsByPlayer>({});
   const [youId, setYouId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>({ message: '', visible: false });
@@ -777,6 +796,7 @@ export default function App() {
         <div className="sideBox scoreWrap">
           <div className="scoreHeader">
             <div className="sideTitle">🏆 Scoreboard</div>
+            <button className="chatToggle" onClick={() => setHistoryOpen(true)} aria-label="History" title="History">📜</button>
             <button
               className="chatToggle"
               disabled={!canChat}
@@ -907,6 +927,51 @@ export default function App() {
   const pauseUntil = room?.pauseUntil ?? null;
   const pauseRemaining = pauseUntil && pauseUntil > now ? Math.ceil((pauseUntil - now) / 1000) : 0;
   const isPaused = pauseRemaining > 0;
+  const nameOf = (pid: string) => room?.players.find(p => p.id === pid)?.name || pid;
+
+  // Center banner (2.5s): trump chosen / trick won. First state after (re)connect only records what's
+  // already been seen, so a reconnect never replays old banners.
+  useEffect(() => {
+    if (!state) { prevStateRef.current = null; bannerSeenRef.current = { trick: null, trump: '' }; return; }
+    const seen = bannerSeenRef.current;
+    const prev = prevStateRef.current;
+    prevStateRef.current = state;
+    const trumpKey = state.trumpSuit ? `${state.handIndex}:${state.trumpSuit}` : '';
+    const trickSeq = state.lastTrick?.seq ?? 0;
+    if (seen.trick === null) {
+      seen.trick = trickSeq;
+      seen.trump = trumpKey;
+      return;
+    }
+    if (trickSeq > seen.trick && state.lastTrick) {
+      seen.trick = trickSeq;
+      seen.trump = trumpKey;
+      setBanner({
+        key: `t${trickSeq}`,
+        title: 'Trick',
+        text: `${nameOf(state.lastTrick.winner)} wins`,
+        card: state.lastTrick.winCard,
+      });
+    } else if (trumpKey && trumpKey !== seen.trump) {
+      seen.trump = trumpKey;
+      const chooser = prev?.phase === 'choose_trump' ? prev.currentBidderId : null;
+      setBanner({
+        key: `a${trumpKey}`,
+        title: 'ATU',
+        text: chooser ? `${nameOf(chooser)} chose the trump` : 'Trump is',
+        suit: state.trumpSuit,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  useEffect(() => {
+    if (!banner) return;
+    const t = window.setTimeout(() => setBanner(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [banner]);
+
+
   const canChat = isInRoom && isConnected;
   const hasUnread = unreadChat > 0;
   const leaderboard = state?.leaderboard || [];
@@ -1130,6 +1195,16 @@ export default function App() {
                     </div>
                     {renderTable()}
                   </div>
+                  {banner && (
+                    <div className="bannerOverlay" key={banner.key}>
+                      <div className="bannerCard">
+                        <div className="bannerTitle">{banner.title}</div>
+                        {banner.card && <div className="bannerCardImg"><CardFace cardStr={banner.card} disabled /></div>}
+                        {banner.suit && <div className={`bannerSuit ${isRedSuit(banner.suit) ? 'red' : 'black'}`}>{suitName(banner.suit)}</div>}
+                        <div className="bannerText">{banner.text}</div>
+                      </div>
+                    </div>
+                  )}
                   {isPaused && (
                     <div className="pauseOverlay">
                       <div className="pauseCard">
@@ -1141,6 +1216,58 @@ export default function App() {
                   )}
                 </div>
                 {rejoinNotice && <div className="notice">{rejoinNotice}</div>}
+                {historyOpen && (
+                  <div className="historyBackdrop" onClick={() => setHistoryOpen(false)}>
+                    <div className="historyModal" onClick={e => e.stopPropagation()}>
+                      <div className="historyHead">
+                        <div className="sideTitle">📜 History</div>
+                        <button onClick={() => setHistoryOpen(false)} aria-label="Close">✕</button>
+                      </div>
+                      {!(state?.history?.length) && !(state?.lastTrick) && <div className="muted small">Nothing yet.</div>}
+                      {(() => {
+                        const done = state?.history ?? [];
+                        const live = state?.phase === 'hand_end' || state?.phase === 'game_end' ? [] : (state?.currentTricks ?? []);
+                        const liveHand: HandLog | null = live.length ? {
+                          handNo: live[0].handNo, cards: state?.cardsPerPlayer ?? 0, trump: state?.trumpSuit ?? null,
+                          bids: Object.fromEntries(Object.entries(state?.bids ?? {}).map(([k, v]) => [k, v ?? 0])),
+                          won: state?.tricksWon ?? {}, delta: {}, tricks: live,
+                        } : null;
+                        const all = liveHand ? [...done, liveHand] : done;
+                        return [...all].reverse().map(h => (
+                          <details className="histHand" key={`h${h.handNo}`} open={h === all[all.length - 1]}>
+                            <summary>
+                              <b>Hand {h.handNo}</b>{h === liveHand ? ' (in progress)' : ''} · {h.cards} cards · ATU <span className={isRedSuit(h.trump) ? 'red' : ''}>{suitName(h.trump)}</span>
+                            </summary>
+                            <table className="histTable">
+                              <thead><tr><th>Player</th><th>Bid</th><th>Won</th><th>Pts</th></tr></thead>
+                              <tbody>
+                                {Object.keys(h.bids).map(pid => (
+                                  <tr key={pid} className={h === liveHand ? '' : h.bids[pid] === h.won[pid] ? 'ok' : 'bad'}>
+                                    <td>{nameOf(pid)}</td><td>{h.bids[pid]}</td><td>{h.won[pid]}</td>
+                                    <td>{h === liveHand ? '' : h.delta[pid] > 0 ? `+${h.delta[pid]}` : h.delta[pid]}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div className="histTricks">
+                              {h.tricks.map((t, i) => (
+                                <div className="histTrick" key={t.seq}>
+                                  <span className="histNo">{i + 1}.</span>
+                                  {t.plays.map(pl => (
+                                    <span key={pl.pid} className={`histPlay${pl.pid === t.winner ? ' win' : ''}${isRedSuit(pl.card.slice(-1)) ? ' red' : ''}`}>
+                                      {nameOf(pl.pid)}: {cardLabel(pl.card)}
+                                    </span>
+                                  ))}
+                                  <span className="histWinner">→ {nameOf(t.winner)} ({cardLabel(t.winCard)})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 <div className="actionRow">
                   {state?.phase === 'choose_trump' && state?.currentBidderId === youId && state?.cardsPerPlayer === 8 && (
@@ -1219,6 +1346,20 @@ export default function App() {
                       </button>
                     </div>
                 </div>
+                    <div className="chatMobileRow">
+                      <button className="chatToggleMobile" onClick={() => setHistoryOpen(true)}>History</button>
+                      <button
+                        className="chatToggleMobile"
+                        disabled={!canChat}
+                        onClick={() => {
+                          setChatOpen(true);
+                          setUnreadChat(0);
+                        }}
+                      >
+                        Chat
+                        {hasUnread && <span className="chatBadge">{unreadChat}</span>}
+                      </button>
+                    </div>
                 </div>
               </main>
 

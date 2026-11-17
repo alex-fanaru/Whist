@@ -1205,6 +1205,19 @@ export default function App() {
                         </span>
                       )}
                     </div>
+                    <div className="chatMobileRow">
+                      <button
+                        className="chatToggleMobile"
+                        disabled={!canChat}
+                        onClick={() => {
+                          setChatOpen(true);
+                          setUnreadChat(0);
+                        }}
+                      >
+                        Chat
+                        {hasUnread && <span className="chatBadge">{unreadChat}</span>}
+                      </button>
+                    </div>
                 </div>
                 </div>
               </main>
@@ -1230,6 +1243,30 @@ export default function App() {
                     })}
                   </div>
                   <div className="winHint">Votează Play again sau închide room-ul.</div>
+                  <div className="winActions">
+                    <button
+                      className="primary"
+                      disabled={playAgainVoted || onCooldown('playAgainVote')}
+                      onClick={() => {
+                        if (onCooldown('playAgainVote')) return;
+                        triggerCooldown('playAgainVote', 800);
+                        socketRef.current?.emit('room:playAgainVote');
+                        setPlayAgainVoted(true);
+                      }}
+                    >
+                      Votează Play again ({room?.playAgainVotes ?? 0}/{room?.playAgainNeeded ?? 0})
+                    </button>
+                    <button
+                      disabled={!amHost || onCooldown('closeRoom')}
+                      onClick={() => {
+                        if (onCooldown('closeRoom')) return;
+                        triggerCooldown('closeRoom', 800);
+                        socketRef.current?.emit('room:close');
+                      }}
+                    >
+                      Închide room
+                    </button>
+                  </div>
                 </div>
                 <div className="fireworks">
                   <span className="spark s1" />
